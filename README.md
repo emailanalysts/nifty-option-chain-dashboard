@@ -1,44 +1,38 @@
-NSE Option Chain Dashboard
+# NSE Option Chain Dashboard
 
-This is a chart-only dashboard. It does NOT use the BUDDY V1-V16 engine.
+A Streamlit dashboard for NIFTY and BANKNIFTY current-expiry option-chain analysis.
 
-Charts:
+## Charts
 
-NIFTY COI
+1. NIFTY COI
+2. BANKNIFTY COI
+3. Overall Open Interest
+4. NIFTY Strike Price-wise OI
+5. BANKNIFTY Strike Price-wise OI
+6. NIFTY Max Pain
+7. BANKNIFTY Max Pain
 
-BANKNIFTY COI
+## Market-hours behavior
 
-Overall Open Interest
+- **09:15–15:30 IST, Monday–Friday:** fetch fresh NSE data and refresh every 3 minutes while the dashboard session is active.
+- **After 15:30 IST:** no NSE calls; show the latest completed trading-day snapshot.
+- **Before 09:15 IST:** no NSE calls; show the most recent previous trading-day snapshot.
+- **Saturday/Sunday:** no NSE calls; show the most recent saved trading-day snapshot.
+- A new trading day starts a fresh COI baseline; previous-day COI is never carried forward.
 
-NIFTY Strike Price-wise OI
+The 15:30 snapshot is captured if a dashboard refresh occurs at/through 15:30. Because Streamlit's 3-minute fragment is session-driven, a refresh that occurs slightly before 15:30 may be the last captured snapshot. A separate background scheduler can be added later if an exact 15:30 collector is required even when nobody has the dashboard open.
 
-BANKNIFTY Strike Price-wise OI
+## Run locally
 
-NIFTY Max Pain
-
-BANKNIFTY Max Pain
-
-Run
-
+```bash
 pip install -r requirements.txt
 streamlit run app.py
+```
 
-Open the Streamlit URL shown in the terminal.
+## Important cloud note
 
-COI
+The current version stores complete snapshots in a local SQLite file so the dashboard can reproduce prior-day charts without calling NSE after market close. Streamlit Community Cloud local storage is not guaranteed to be permanent across app restarts/redeployments. For durable historical data, move the snapshot store to a persistent cloud database (for example PostgreSQL/Supabase) and optionally run the collector as a separate scheduled job.
 
-COI is built from intraday snapshots saved in SQLite.
+## NSE connectivity
 
-For each new snapshot:
-
-CE delta = current total CE OI - previous total CE OI
-PE delta = current total PE OI - previous total PE OI
-COI increment = PE delta - CE delta
-
-The dashboard stores the cumulative COI curve.
-
-Keep the app running during market hours and use Refresh now periodically.
-
-Important
-
-NSE may occasionally block automated requests. The data layer therefore creates a fresh session, visits the NSE homepage first, retries failed requests, and validates the JSON response.
+NSE may occasionally block automated requests. The data layer creates a fresh session, visits the NSE option-chain page first, retries failed requests, and validates the JSON response.
