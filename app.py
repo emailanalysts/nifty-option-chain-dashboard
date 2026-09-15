@@ -4,7 +4,11 @@ import plotly.graph_objects as go
 from datetime import datetime, time as dt_time
 from zoneinfo import ZoneInfo
 from nse_data import fetch_option_chain
-from calculations import prepare_chain, atm_strike, strike_wise_oi, max_pain, overall_oi, load_intraday_history, save_snapshot, latest_saved_trading_date, load_latest_snapshot_on_or_before
+from calculations import (
+    prepare_chain, atm_strike, strike_wise_oi, max_pain, overall_oi,
+    load_intraday_history, save_snapshot, latest_saved_trading_date,
+    previous_saved_trading_date, load_latest_snapshot_on_or_before
+)
 
 IST=ZoneInfo("Asia/Kolkata")
 MARKET_OPEN=dt_time(9,15); MARKET_CLOSE=dt_time(15,30)
@@ -15,16 +19,15 @@ def ist_now(): return datetime.now(IST)
 def market_hours(now): return MARKET_OPEN <= now.time() <= MARKET_CLOSE
 
 def completed_day_data(symbol):
-    now=ist_now(); target=now.date().isoformat()
-    if now.time() < MARKET_OPEN:
-        # Before today's open, use the most recent prior saved day.
-        last=latest_saved_trading_date(symbol)
-        if last==target:
-            with __import__('sqlite3').connect(__import__('calculations').DB) as con:
-                row=con.execute("SELECT MAX(substr(timestamp,1,10)) FROM snapshots WHERE symbol=? AND substr(timestamp,1,10) < ?",(symbol,target)).fetchone()
-            last=row[0] if row and row[0] else None
-        target=last
-    return load_latest_snapshot_on_or_before(symbol,target) if target else pd.DataFrame()
+    now = ist_now()
+    today = now.date().isoformat()
+    target = latest_saved_trading_date(symbol)
+
+    # Before today's market open, never display a partial snapshot from today.
+    if now.time() < MARKET_OPEN and target == today:
+        target = previous_saved_trading_date(symbol, today)
+
+    return load_latest_snapshot_on_or_before(symbol, target) if target else pd.DataFrame()
 
 @st.cache_data(ttl=60)
 def get_live_data(symbol): return prepare_chain(fetch_option_chain(symbol),symbol)
