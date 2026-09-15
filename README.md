@@ -36,3 +36,14 @@ The current version stores complete snapshots in a local SQLite file so the dash
 ## NSE connectivity
 
 NSE may occasionally block automated requests. The data layer creates a fresh session, visits the NSE option-chain page first, retries failed requests, and validates the JSON response.
+
+
+## Database Status
+The dashboard now shows a Database Status indicator at the top of the page. It checks connectivity to Supabase PostgreSQL and shows the stored snapshot count and latest snapshot time. During market hours it also confirms whether the current NIFTY and BANKNIFTY snapshots were saved successfully.
+
+Streamlit Cloud Secrets must contain:
+```toml
+[connections.postgresql]
+url = "postgresql://postgres.PROJECT_REF:YOUR_PASSWORD@POOLER_HOST:5432/postgres?sslmode=require"
+```
+Do not commit the real password to GitHub.
