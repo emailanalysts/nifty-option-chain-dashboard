@@ -233,3 +233,57 @@ def load_coi_history_for_latest_day(symbol, on_or_before=None):
     if not date_str:
         return pd.DataFrame()
     return load_intraday_history(symbol, date_str)
+
+
+def database_status():
+    """Return a safe database connectivity/status summary for the dashboard."""
+    try:
+        with _connect() as con:
+            with con.cursor() as cur:
+                cur.execute("SELECT NOW()")
+                db_now = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*), MAX(snapshot_time) FROM option_chain_snapshots")
+                count, latest = cur.fetchone()
+        return {
+            "ok": True,
+            "message": "Connected",
+            "snapshot_count": int(count or 0),
+            "latest_snapshot": latest,
+            "db_time": db_now,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "message": str(exc),
+            "snapshot_count": 0,
+            "latest_snapshot": None,
+            "db_time": None,
+        }
+
+
+def latest_snapshot_info(symbol):
+    """Return latest saved snapshot metadata for one symbol."""
+    try:
+        with _connect() as con:
+            with con.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT trading_date, snapshot_time, expiry_date, cumulative_coi
+                    FROM option_chain_snapshots
+                    WHERE symbol=%s
+                    ORDER BY snapshot_time DESC
+                    LIMIT 1
+                    """,
+                    (symbol,),
+                )
+                row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "trading_date": row[0],
+            "snapshot_time": row[1],
+            "expiry_date": row[2],
+            "cumulative_coi": float(row[3] or 0),
+        }
+    except Exception:
+        return None
