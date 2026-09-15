@@ -7,7 +7,8 @@ from nse_data import fetch_option_chain
 from calculations import (
     prepare_chain, atm_strike, strike_wise_oi, max_pain, overall_oi,
     load_intraday_history, save_snapshot, latest_saved_trading_date,
-    previous_saved_trading_date, load_latest_snapshot_on_or_before
+    previous_saved_trading_date, load_latest_snapshot_on_or_before,
+    database_status, latest_snapshot_info
 )
 
 IST=ZoneInfo("Asia/Kolkata")
@@ -32,13 +33,34 @@ def completed_day_data(symbol):
 @st.cache_data(ttl=60)
 def get_live_data(symbol): return prepare_chain(fetch_option_chain(symbol),symbol)
 
+def render_database_status():
+    status = database_status()
+    if status["ok"]:
+        latest = status["latest_snapshot"]
+        if latest is not None:
+            latest_ist = pd.Timestamp(latest).tz_convert(IST) if pd.Timestamp(latest).tzinfo else pd.Timestamp(latest, tz="UTC").tz_convert(IST)
+            latest_text = latest_ist.strftime("%d-%b-%Y %H:%M:%S IST")
+        else:
+            latest_text = "No snapshots yet"
+        st.success(f"🟢 Database Status: Connected to Supabase • {status['snapshot_count']:,} snapshots • Latest: {latest_text}")
+        return True
+    st.error(f"🔴 Database Status: NOT CONNECTED • {status['message']}")
+    st.info("Add [connections.postgresql] url in Streamlit Cloud → App Settings → Secrets, then redeploy or refresh the app.")
+    return False
+
+
 def render_dashboard():
     now=ist_now(); live=market_hours(now)
+    db_ok = render_database_status()
     if live:
         try: nifty=get_live_data("NIFTY"); bank=get_live_data("BANKNIFTY")
         except Exception as e: st.error(f"Unable to fetch NSE option-chain data: {e}"); st.stop()
-        try: save_snapshot(nifty); save_snapshot(bank)
-        except Exception as e: st.warning(f"Snapshot storage warning: {e}")
+        try:
+            save_snapshot(nifty); save_snapshot(bank)
+            st.caption("✅ Current NIFTY and BANKNIFTY snapshots saved to Supabase.")
+        except Exception as e:
+            st.error(f"❌ Snapshot save failed: {e}")
+            st.info("The charts can still display live NSE data, but persistent history was not saved.")
         data_label="LIVE • Market hours"
     else:
         nifty=completed_day_data("NIFTY"); bank=completed_day_data("BANKNIFTY"); data_label="PREVIOUS COMPLETED TRADING DAY • Market closed"
