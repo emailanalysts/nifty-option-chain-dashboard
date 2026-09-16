@@ -3,6 +3,5 @@ pandas>=2.2
 numpy>=1.26
 plotly>=5.24
 requests>=2.32
-
 psycopg2-binary>=2.9
 SQLAlchemy>=2.0
