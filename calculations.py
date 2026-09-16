@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, date
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -16,7 +16,26 @@ def _db_url():
 
 
 def _connect():
-    return psycopg2.connect(_db_url())
+    return psycopg2.connect(_db_url(), connect_timeout=10)
+
+
+def database_status():
+    """Return a safe, non-secret Supabase connectivity summary for the UI."""
+    try:
+        with _connect() as con:
+            with con.cursor() as cur:
+                cur.execute("SELECT COUNT(*), MAX(snapshot_time) FROM option_chain_snapshots")
+                count, latest = cur.fetchone()
+        if latest is not None:
+            latest_ist = pd.Timestamp(latest)
+            if latest_ist.tzinfo is None:
+                latest_ist = latest_ist.tz_localize("UTC")
+            latest_text = latest_ist.tz_convert(IST).strftime("%d-%b-%Y %H:%M:%S IST")
+        else:
+            latest_text = None
+        return {"connected": True, "count": int(count or 0), "latest": latest_text, "error": None}
+    except Exception as e:
+        return {"connected": False, "count": 0, "latest": None, "error": str(e)}
 
 
 def prepare_chain(df, symbol):
@@ -109,7 +128,6 @@ def save_snapshot(df):
 
     with _connect() as con:
         with con.cursor() as cur:
-            # Previous snapshot from the SAME trading day, symbol and expiry.
             cur.execute(
                 """
                 SELECT spot, cumulative_coi, chain_data
@@ -131,7 +149,6 @@ def save_snapshot(df):
                 increment = (pe_oi - prev_pe) - (ce_oi - prev_ce)
                 cumulative = float(prev[1] or 0) + increment
 
-            # Re-running within the same minute replaces that snapshot.
             cur.execute(
                 """
                 DELETE FROM option_chain_snapshots
@@ -172,10 +189,7 @@ def load_intraday_history(symbol, trading_date=None):
 def latest_saved_trading_date(symbol):
     with _connect() as con:
         with con.cursor() as cur:
-            cur.execute(
-                "SELECT MAX(trading_date) FROM option_chain_snapshots WHERE symbol=%s",
-                (symbol,),
-            )
+            cur.execute("SELECT MAX(trading_date) FROM option_chain_snapshots WHERE symbol=%s", (symbol,))
             row = cur.fetchone()
     return row[0].isoformat() if row and row[0] else None
 
@@ -185,11 +199,7 @@ def previous_saved_trading_date(symbol, before_date):
     with _connect() as con:
         with con.cursor() as cur:
             cur.execute(
-                """
-                SELECT MAX(trading_date)
-                FROM option_chain_snapshots
-                WHERE symbol=%s AND trading_date < %s
-                """,
+                "SELECT MAX(trading_date) FROM option_chain_snapshots WHERE symbol=%s AND trading_date < %s",
                 (symbol, before),
             )
             row = cur.fetchone()
@@ -233,57 +243,3 @@ def load_coi_history_for_latest_day(symbol, on_or_before=None):
     if not date_str:
         return pd.DataFrame()
     return load_intraday_history(symbol, date_str)
-
-
-def database_status():
-    """Return a safe database connectivity/status summary for the dashboard."""
-    try:
-        with _connect() as con:
-            with con.cursor() as cur:
-                cur.execute("SELECT NOW()")
-                db_now = cur.fetchone()[0]
-                cur.execute("SELECT COUNT(*), MAX(snapshot_time) FROM option_chain_snapshots")
-                count, latest = cur.fetchone()
-        return {
-            "ok": True,
-            "message": "Connected",
-            "snapshot_count": int(count or 0),
-            "latest_snapshot": latest,
-            "db_time": db_now,
-        }
-    except Exception as exc:
-        return {
-            "ok": False,
-            "message": str(exc),
-            "snapshot_count": 0,
-            "latest_snapshot": None,
-            "db_time": None,
-        }
-
-
-def latest_snapshot_info(symbol):
-    """Return latest saved snapshot metadata for one symbol."""
-    try:
-        with _connect() as con:
-            with con.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT trading_date, snapshot_time, expiry_date, cumulative_coi
-                    FROM option_chain_snapshots
-                    WHERE symbol=%s
-                    ORDER BY snapshot_time DESC
-                    LIMIT 1
-                    """,
-                    (symbol,),
-                )
-                row = cur.fetchone()
-        if not row:
-            return None
-        return {
-            "trading_date": row[0],
-            "snapshot_time": row[1],
-            "expiry_date": row[2],
-            "cumulative_coi": float(row[3] or 0),
-        }
-    except Exception:
-        return None
