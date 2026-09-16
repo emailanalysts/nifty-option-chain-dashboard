@@ -3,11 +3,17 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, time as dt_time
 from zoneinfo import ZoneInfo
-from nse_data import fetch_option_chain
+
 from calculations import (
-    prepare_chain, atm_strike, strike_wise_oi, max_pain, overall_oi,
-    load_intraday_history, save_snapshot, latest_saved_trading_date,
-    previous_saved_trading_date, load_latest_snapshot_on_or_before,
+    prepare_chain,
+    atm_strike,
+    strike_wise_oi,
+    max_pain,
+    overall_oi,
+    load_intraday_history,
+    latest_saved_trading_date,
+    previous_saved_trading_date,
+    load_latest_snapshot_on_or_before,
     database_status,
 )
 
@@ -16,7 +22,20 @@ MARKET_OPEN = dt_time(9, 15)
 MARKET_CLOSE = dt_time(15, 30)
 
 st.set_page_config(page_title="NSE Option Chain Dashboard", layout="wide")
-st.markdown("""<style>html,body,[class*="css"]{font-size:85%!important}.stApp{font-size:85%!important}h1{font-size:1.8rem!important}h2{font-size:1.45rem!important}h3{font-size:1.2rem!important}[data-testid="stMetricValue"]{font-size:1.35rem!important}[data-testid="stMetricLabel"]{font-size:.8rem!important}[data-testid="stMetricDelta"]{font-size:.75rem!important}button{font-size:.8rem!important}</style>""", unsafe_allow_html=True)
+
+st.markdown("""
+<style>
+html, body, [class*="css"] { font-size: 85% !important; }
+.stApp { font-size: 85% !important; }
+h1 { font-size: 1.8rem !important; }
+h2 { font-size: 1.45rem !important; }
+h3 { font-size: 1.2rem !important; }
+[data-testid="stMetricValue"] { font-size: 1.35rem !important; }
+[data-testid="stMetricLabel"] { font-size: 0.8rem !important; }
+[data-testid="stMetricDelta"] { font-size: 0.75rem !important; }
+button { font-size: 0.8rem !important; }
+</style>
+""", unsafe_allow_html=True)
 
 
 def ist_now():
@@ -24,97 +43,90 @@ def ist_now():
 
 
 def market_hours(now):
-    return MARKET_OPEN <= now.time() <= MARKET_CLOSE
+    return now.weekday() < 5 and MARKET_OPEN <= now.time() <= MARKET_CLOSE
 
 
 def render_database_status():
     status = database_status()
     if status["connected"]:
-        count = status["count"]
         latest = status["latest"] or "No snapshots yet"
         st.success(
-            f"🟢 Database Status: Connected to Supabase • {count:,} snapshots • Latest: {latest}",
+            f"🟢 Database Status: Connected to Supabase • {status['count']:,} snapshots • Latest: {latest}",
             icon=None,
         )
     else:
         st.error(f"🔴 Database Status: NOT CONNECTED • {status['error']}")
-        st.info(
-            "Check Streamlit Cloud → App settings → Secrets and confirm "
-            "[connections.postgresql] contains the Supabase Session Pooler URI."
-        )
 
 
-def completed_day_data(symbol):
-    now = ist_now()
+def choose_display_date(symbol, now):
     today = now.date().isoformat()
-    target = latest_saved_trading_date(symbol)
-
-    if now.time() < MARKET_OPEN and target == today:
-        target = previous_saved_trading_date(symbol, today)
-
-    return load_latest_snapshot_on_or_before(symbol, target) if target else pd.DataFrame()
+    latest = latest_saved_trading_date(symbol)
+    if latest == today:
+        return today
+    return latest
 
 
-@st.cache_data(ttl=60)
-def get_live_data(symbol):
-    return prepare_chain(fetch_option_chain(symbol), symbol)
+def load_display_data(symbol, now):
+    target = choose_display_date(symbol, now)
+    if not target:
+        return pd.DataFrame(), None
+    return load_latest_snapshot_on_or_before(symbol, target), target
+
+
+def snapshot_age_minutes(symbol, now):
+    target = choose_display_date(symbol, now)
+    if not target:
+        return None
+    hist = load_intraday_history(symbol, target)
+    if hist.empty:
+        return None
+    ts = hist["timestamp"].max()
+    return max(0.0, (now - ts).total_seconds() / 60.0)
 
 
 def render_dashboard():
     render_database_status()
-
     now = ist_now()
     live = market_hours(now)
 
-    if live:
-        try:
-            nifty = get_live_data("NIFTY")
-            bank = get_live_data("BANKNIFTY")
-        except Exception as e:
-            st.error(f"Unable to fetch NSE option-chain data: {e}")
-            st.stop()
+    nifty, nifty_date = load_display_data("NIFTY", now)
+    bank, bank_date = load_display_data("BANKNIFTY", now)
 
-        save_errors = []
-        for df in (nifty, bank):
-            symbol = str(df["symbol"].iloc[0])
-            try:
-                save_snapshot(df)
-            except Exception as e:
-                save_errors.append(f"{symbol}: {e}")
+    if nifty.empty or bank.empty:
+        st.warning("No option-chain snapshot is available in Supabase yet.")
+        st.info("The background collector will populate the dashboard automatically during NSE market hours.")
+        return
 
-        if save_errors:
-            st.error("🔴 Snapshot save failed: " + " | ".join(save_errors))
-        else:
-            st.success("✅ NIFTY and BANKNIFTY snapshots saved to Supabase.", icon=None)
-
-        data_label = "LIVE • Market hours"
+    data_date = nifty_date or bank_date
+    if live and data_date == now.date().isoformat():
+        mode = "LIVE • Supabase collector"
     else:
-        try:
-            nifty = completed_day_data("NIFTY")
-            bank = completed_day_data("BANKNIFTY")
-        except Exception as e:
-            st.error(f"Database read failed: {e}")
-            st.stop()
-
-        data_label = "PREVIOUS COMPLETED TRADING DAY • Market closed"
-        if nifty.empty or bank.empty:
-            st.warning(
-                "No completed trading-day snapshot is available yet. "
-                "Open the dashboard during market hours to collect the first snapshot."
-            )
-            st.stop()
+        mode = "PREVIOUS COMPLETED TRADING DAY • Market closed / awaiting first snapshot"
 
     col_title, col_refresh = st.columns([8, 1])
     with col_title:
         st.title("NSE Option Chain Dashboard")
         st.caption(
-            f"{data_label} • IST {now.strftime('%d-%b-%Y %H:%M:%S')} • "
-            "Auto-refresh every 3 minutes during 09:15–15:30 IST"
+            f"{mode} • IST {now.strftime('%d-%b-%Y %H:%M:%S')} • "
+            "Collector: Supabase Cron every 3 minutes • Dashboard: read-only"
         )
     with col_refresh:
         if st.button("🔄 Refresh", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
+
+    if live:
+        age_n = snapshot_age_minutes("NIFTY", now)
+        age_b = snapshot_age_minutes("BANKNIFTY", now)
+        if age_n is not None and age_b is not None:
+            age = max(age_n, age_b)
+            if age > 6:
+                st.warning(
+                    f"⚠️ Collector gap detected: latest NIFTY/BANKNIFTY snapshot is about {age:.1f} minutes old. "
+                    "The chart is showing the last stored snapshot; no values are being fabricated."
+                )
+            else:
+                st.success("✅ Collector is updating Supabase normally.", icon=None)
 
     ne = nifty["expiryDate"].iloc[0]
     be = bank["expiryDate"].iloc[0]
@@ -141,30 +153,44 @@ def render_dashboard():
 
     for title, symbol in [("1. NIFTY COI", "NIFTY"), ("2. NIFTY BANK COI", "BANKNIFTY")]:
         st.subheader(title)
-        hist = load_intraday_history(symbol) if live else load_intraday_history(symbol, latest_saved_trading_date(symbol))
+        hist_date = choose_display_date(symbol, now)
+        hist = load_intraday_history(symbol, hist_date) if hist_date else pd.DataFrame()
         fig = go.Figure()
         if not hist.empty:
-            fig.add_trace(go.Scatter(x=hist.timestamp, y=hist.cumulative_coi, mode="lines+markers", name="COI"))
+            fig.add_trace(go.Scatter(
+                x=hist["timestamp"], y=hist["cumulative_coi"],
+                mode="lines+markers", name="COI",
+            ))
         else:
-            fig.add_annotation(text="No intraday COI history available.", x=.5, y=.5, xref="paper", yref="paper", showarrow=False)
+            fig.add_annotation(text="No intraday COI history available.", x=.5, y=.5,
+                               xref="paper", yref="paper", showarrow=False)
         fig.update_layout(height=400, xaxis_title="Time", yaxis_title="Cumulative COI", hovermode="x unified")
         st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("3. Overall Open Interest")
     oi = overall_oi(nifty, bank)
     fig = go.Figure()
-    for name, x, s in [("NIFTY CE", "NIFTY", "CE"), ("NIFTY PE", "NIFTY", "PE"), ("BANKNIFTY CE", "BANKNIFTY", "CE"), ("BANKNIFTY PE", "BANKNIFTY", "PE")]:
+    for name, x, s in [
+        ("NIFTY CE", "NIFTY", "CE"), ("NIFTY PE", "NIFTY", "PE"),
+        ("BANKNIFTY CE", "BANKNIFTY", "CE"), ("BANKNIFTY PE", "BANKNIFTY", "PE")
+    ]:
         fig.add_trace(go.Bar(name=name, x=[x], y=[oi[x][s]]))
     fig.update_layout(barmode="group", height=450, yaxis_title="Open Interest", hovermode="x unified")
     st.plotly_chart(fig, use_container_width=True)
 
-    for title, data, orange in [("4. NIFTY Strike Price-wise OI", nifty, False), ("5. NIFTY Bank Strike Price-wise OI", bank, True)]:
+    for title, data, orange in [
+        ("4. NIFTY Strike Price-wise OI", nifty, False),
+        ("5. NIFTY Bank Strike Price-wise OI", bank, True),
+    ]:
         st.subheader(title)
         d = strike_wise_oi(data, 10)
         fig = go.Figure()
-        fig.add_trace(go.Bar(x=d.strikePrice, y=d.CE_OI, name="CE OI", marker_color="orange" if orange else None))
-        fig.add_trace(go.Bar(x=d.strikePrice, y=d.PE_OI, name="PE OI", marker_color="moccasin" if orange else None))
-        fig.update_layout(barmode="group", height=500, xaxis_title="Strike Price", yaxis_title="Open Interest", hovermode="x unified")
+        fig.add_trace(go.Bar(x=d.strikePrice, y=d.CE_OI, name="CE OI",
+                             marker_color="orange" if orange else None))
+        fig.add_trace(go.Bar(x=d.strikePrice, y=d.PE_OI, name="PE OI",
+                             marker_color="moccasin" if orange else None))
+        fig.update_layout(barmode="group", height=500, xaxis_title="Strike Price",
+                          yaxis_title="Open Interest", hovermode="x unified")
         st.plotly_chart(fig, use_container_width=True)
 
     for title, data in [("6. NIFTY Max Pain", nifty), ("7. NIFTY Bank Max Pain", bank)]:
@@ -175,20 +201,20 @@ def render_dashboard():
         pain = pain.iloc[max(0, idx - 15):min(len(pain), idx + 16)]
         fig = go.Figure()
         fig.add_trace(go.Bar(x=pain.strikePrice, y=pain.totalPain, name="Total Pain"))
-        fig.add_vline(x=mp, line_dash="dash", line_color="red", annotation_text=f"Max Pain: {mp}", annotation_font_color="red")
+        fig.add_vline(x=mp, line_dash="dash", line_color="red",
+                      annotation_text=f"Max Pain: {mp}", annotation_font_color="red")
         fig.update_layout(height=450, xaxis_title="Strike Price", yaxis_title="Total Pain")
         st.plotly_chart(fig, use_container_width=True)
 
     st.caption(
-        "09:15–15:30 IST: fresh NSE data and 3-minute refresh. Outside market hours: no NSE fetch; "
-        "display the latest completed trading day's saved graphs and numbers. A new trading day starts a fresh COI series."
+        "Architecture: NSE → Supabase Cron → Edge Function → Supabase → Streamlit. "
+        "The Streamlit dashboard never fetches NSE or writes snapshots."
     )
 
 
-if market_hours(ist_now()):
-    @st.fragment(run_every="3m")
-    def live_fragment():
-        render_dashboard()
-    live_fragment()
-else:
+@st.fragment(run_every="3m")
+def auto_refresh_dashboard():
     render_dashboard()
+
+
+auto_refresh_dashboard()
