@@ -165,7 +165,7 @@ def render_dashboard():
             fig.add_annotation(text="No intraday COI history available.", x=.5, y=.5,
                                xref="paper", yref="paper", showarrow=False)
         fig.update_layout(height=400, xaxis_title="Time", yaxis_title="Cumulative COI", hovermode="x unified")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key=f"coi_chart_{symbol}")
 
     st.subheader("3. Overall Open Interest")
     oi = overall_oi(nifty, bank)
@@ -176,7 +176,7 @@ def render_dashboard():
     ]:
         fig.add_trace(go.Bar(name=name, x=[x], y=[oi[x][s]]))
     fig.update_layout(barmode="group", height=450, yaxis_title="Open Interest", hovermode="x unified")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, key="overall_oi_chart")
 
     for title, data, orange in [
         ("4. NIFTY Strike Price-wise OI", nifty, False),
@@ -191,7 +191,7 @@ def render_dashboard():
                              marker_color="moccasin" if orange else None))
         fig.update_layout(barmode="group", height=500, xaxis_title="Strike Price",
                           yaxis_title="Open Interest", hovermode="x unified")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key=f"strike_oi_chart_{symbol}")
 
     for title, data in [("6. NIFTY Max Pain", nifty), ("7. NIFTY Bank Max Pain", bank)]:
         st.subheader(title)
@@ -204,7 +204,7 @@ def render_dashboard():
         fig.add_vline(x=mp, line_dash="dash", line_color="red",
                       annotation_text=f"Max Pain: {mp}", annotation_font_color="red")
         fig.update_layout(height=450, xaxis_title="Strike Price", yaxis_title="Total Pain")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key=f"max_pain_chart_{symbol}")
 
     st.caption(
         "Architecture: NSE → Supabase Cron → Edge Function → Supabase → Streamlit. "
