@@ -191,7 +191,7 @@ def render_dashboard():
                              marker_color="moccasin" if orange else None))
         fig.update_layout(barmode="group", height=500, xaxis_title="Strike Price",
                           yaxis_title="Open Interest", hovermode="x unified")
-        st.plotly_chart(fig, use_container_width=True, key=f"strike_oi_chart_{symbol}")
+        st.plotly_chart(fig, use_container_width=True, key=f"strike_oi_chart_{title}")
 
     for title, data in [("6. NIFTY Max Pain", nifty), ("7. NIFTY Bank Max Pain", bank)]:
         st.subheader(title)
