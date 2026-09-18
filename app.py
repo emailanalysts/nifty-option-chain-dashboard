@@ -204,7 +204,7 @@ def render_dashboard():
         fig.add_vline(x=mp, line_dash="dash", line_color="red",
                       annotation_text=f"Max Pain: {mp}", annotation_font_color="red")
         fig.update_layout(height=450, xaxis_title="Strike Price", yaxis_title="Total Pain")
-        st.plotly_chart(fig, use_container_width=True, key=f"max_pain_chart_{symbol}")
+        st.plotly_chart(fig, use_container_width=True, key=f"max_pain_chart_{title}")
 
     st.caption(
         "Architecture: NSE → Supabase Cron → Edge Function → Supabase → Streamlit. "
