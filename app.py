@@ -108,7 +108,7 @@ def render_dashboard():
         st.title("NSE Option Chain Dashboard")
         st.caption(
             f"{mode} • IST {now.strftime('%d-%b-%Y %H:%M:%S')} • "
-            # "Collector: Supabase Cron every 3 minutes • Dashboard: read-only"
+            "Collector: Supabase Cron every 3 minutes • Dashboard: read-only"
         )
     with col_refresh:
         if st.button("🔄 Refresh", use_container_width=True):
@@ -213,8 +213,8 @@ for col, title, data, chart_key in [
         st.plotly_chart(fig, use_container_width=True, key=chart_key)
 
     st.caption(
-        # "Architecture: NSE → Supabase Cron → Edge Function → Supabase → Streamlit. "
-        # "The Streamlit dashboard never fetches NSE or writes snapshots."
+        "Architecture: NSE → Supabase Cron → Edge Function → Supabase → Streamlit. "
+        "The Streamlit dashboard never fetches NSE or writes snapshots."
     )
 
 
