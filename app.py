@@ -48,202 +48,474 @@ def market_hours(now):
 
 def render_database_status():
     status = database_status()
+
     if status["connected"]:
         latest = status["latest"] or "No snapshots yet"
+
         st.success(
-            f"🟢 Database Status: Connected to Supabase • {status['count']:,} snapshots • Latest: {latest}",
+            f"🟢 Database Status: Connected to Supabase • "
+            f"{status['count']:,} snapshots • Latest: {latest}",
             icon=None,
         )
     else:
-        st.error(f"🔴 Database Status: NOT CONNECTED • {status['error']}")
+        st.error(
+            f"🔴 Database Status: NOT CONNECTED • {status['error']}"
+        )
 
 
 def choose_display_date(symbol, now):
     today = now.date().isoformat()
     latest = latest_saved_trading_date(symbol)
+
     if latest == today:
         return today
+
     return latest
 
 
 def load_display_data(symbol, now):
     target = choose_display_date(symbol, now)
+
     if not target:
         return pd.DataFrame(), None
+
     return load_latest_snapshot_on_or_before(symbol, target), target
 
 
 def snapshot_age_minutes(symbol, now):
     target = choose_display_date(symbol, now)
+
     if not target:
         return None
+
     hist = load_intraday_history(symbol, target)
+
     if hist.empty:
         return None
+
     ts = hist["timestamp"].max()
-    return max(0.0, (now - ts).total_seconds() / 60.0)
+
+    return max(
+        0.0,
+        (now - ts).total_seconds() / 60.0
+    )
 
 
 def render_dashboard():
+
     render_database_status()
+
     now = ist_now()
     live = market_hours(now)
 
+    # ---------------------------------------------------------
+    # Load current/last available data
+    # ---------------------------------------------------------
     nifty, nifty_date = load_display_data("NIFTY", now)
     bank, bank_date = load_display_data("BANKNIFTY", now)
 
     if nifty.empty or bank.empty:
-        st.warning("No option-chain snapshot is available in Supabase yet.")
-        st.info("The background collector will populate the dashboard automatically during NSE market hours.")
+        st.warning(
+            "No option-chain snapshot is available in Supabase yet."
+        )
+
+        st.info(
+            "The background collector will populate the dashboard "
+            "automatically during NSE market hours."
+        )
+
         return
 
     data_date = nifty_date or bank_date
+
     if live and data_date == now.date().isoformat():
         mode = "LIVE • Supabase collector"
     else:
-        mode = "PREVIOUS COMPLETED TRADING DAY • Market closed / awaiting first snapshot"
+        mode = (
+            "PREVIOUS COMPLETED TRADING DAY • "
+            "Market closed / awaiting first snapshot"
+        )
 
+    # ---------------------------------------------------------
+    # Title + Refresh
+    # ---------------------------------------------------------
     col_title, col_refresh = st.columns([8, 1])
+
     with col_title:
+
         st.title("NSE Option Chain Dashboard")
+
         st.caption(
             f"{mode} • IST {now.strftime('%d-%b-%Y %H:%M:%S')} • "
-            "Collector: Supabase Cron every 3 minutes • Dashboard: read-only"
+            "Collector: Supabase Cron every 3 minutes • "
+            "Dashboard: read-only"
         )
+
     with col_refresh:
-        if st.button("🔄 Refresh", use_container_width=True):
+
+        if st.button(
+            "🔄 Refresh",
+            use_container_width=True
+        ):
             st.cache_data.clear()
             st.rerun()
 
+    # ---------------------------------------------------------
+    # Collector freshness
+    # ---------------------------------------------------------
     if live:
+
         age_n = snapshot_age_minutes("NIFTY", now)
         age_b = snapshot_age_minutes("BANKNIFTY", now)
+
         if age_n is not None and age_b is not None:
+
             age = max(age_n, age_b)
+
             if age > 6:
+
                 st.warning(
-                    f"⚠️ Collector gap detected: latest NIFTY/BANKNIFTY snapshot is about {age:.1f} minutes old. "
-                    "The chart is showing the last stored snapshot; no values are being fabricated."
+                    f"⚠️ Collector gap detected: latest "
+                    f"NIFTY/BANKNIFTY snapshot is about "
+                    f"{age:.1f} minutes old. "
+                    "The chart is showing the last stored snapshot; "
+                    "no values are being fabricated."
                 )
+
             else:
-                st.success("✅ Collector is updating Supabase normally.", icon=None)
 
+                st.success(
+                    "✅ Collector is updating Supabase normally.",
+                    icon=None,
+                )
+
+    # ---------------------------------------------------------
+    # NIFTY summary
+    # ---------------------------------------------------------
     ne = nifty["expiryDate"].iloc[0]
-    be = bank["expiryDate"].iloc[0]
-    n1, n2, n3 = st.columns(3)
-    n1.metric("NIFTY Spot", f'{round(float(nifty["underlyingValue"].iloc[0])):,}')
-    n2.metric("NIFTY Expiry", pd.Timestamp(ne).strftime("%d-%b-%Y"))
-    n3.metric("NIFTY Max Pain", f'{max_pain(nifty):,.0f}')
-    b1, b2, b3 = st.columns(3)
-    b1.metric("BANKNIFTY Spot", f'{round(float(bank["underlyingValue"].iloc[0])):,}')
-    b2.metric("BANKNIFTY Expiry", pd.Timestamp(be).strftime("%d-%b-%Y"))
-    b3.metric("BANKNIFTY Max Pain", f'{max_pain(bank):,.0f}')
 
+    n1, n2, n3 = st.columns(3)
+
+    n1.metric(
+        "NIFTY Spot",
+        f'{round(float(nifty["underlyingValue"].iloc[0])):,}'
+    )
+
+    n2.metric(
+        "NIFTY Expiry",
+        pd.Timestamp(ne).strftime("%d-%b-%Y")
+    )
+
+    n3.metric(
+        "NIFTY Max Pain",
+        f'{max_pain(nifty):,.0f}'
+    )
+
+    # ---------------------------------------------------------
+    # BANKNIFTY summary
+    # ---------------------------------------------------------
+    be = bank["expiryDate"].iloc[0]
+
+    b1, b2, b3 = st.columns(3)
+
+    b1.metric(
+        "BANKNIFTY Spot",
+        f'{round(float(bank["underlyingValue"].iloc[0])):,}'
+    )
+
+    b2.metric(
+        "BANKNIFTY Expiry",
+        pd.Timestamp(be).strftime("%d-%b-%Y")
+    )
+
+    b3.metric(
+        "BANKNIFTY Max Pain",
+        f'{max_pain(bank):,.0f}'
+    )
+
+    # ---------------------------------------------------------
+    # NIFTY ATM Premium
+    # ---------------------------------------------------------
     st.divider()
+
     st.subheader("NIFTY ATM Strike Premium")
+
     atm = atm_strike(nifty)
-    row = nifty.loc[nifty["strikePrice"] == atm].iloc[0]
+
+    row = nifty.loc[
+        nifty["strikePrice"] == atm
+    ].iloc[0]
+
     ce = float(row["CE_Premium"])
     pe = float(row["PE_Premium"])
+
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("ATM Strike", f"{atm:,.0f}")
-    c2.metric("CE Premium", f"{ce:,.2f}")
-    c3.metric("PE Premium", f"{pe:,.2f}")
-    c4.metric("CE - PE Difference", f"{ce - pe:,.2f}")
 
-    for title, symbol in [("1. NIFTY COI", "NIFTY"), ("2. NIFTY BANK COI", "BANKNIFTY")]:
-        st.subheader(title)
-        hist_date = choose_display_date(symbol, now)
-        hist = load_intraday_history(symbol, hist_date) if hist_date else pd.DataFrame()
-        fig = go.Figure()
-        if not hist.empty:
-            fig.add_trace(go.Scatter(
-                x=hist["timestamp"], y=hist["cumulative_coi"],
-                mode="lines+markers", name="COI",
-            ))
-        else:
-            fig.add_annotation(text="No intraday COI history available.", x=.5, y=.5,
-                               xref="paper", yref="paper", showarrow=False)
-        fig.update_layout(height=400, xaxis_title="Time", yaxis_title="Cumulative COI", hovermode="x unified")
-        st.plotly_chart(fig, use_container_width=True, key=f"coi_chart_{symbol}")
+    c1.metric(
+        "ATM Strike",
+        f"{atm:,.0f}"
+    )
 
-    st.subheader("3. Overall Open Interest")
-    oi = overall_oi(nifty, bank)
-    fig = go.Figure()
-    for name, x, s in [
-        ("NIFTY CE", "NIFTY", "CE"), ("NIFTY PE", "NIFTY", "PE"),
-        ("BANKNIFTY CE", "BANKNIFTY", "CE"), ("BANKNIFTY PE", "BANKNIFTY", "PE")
+    c2.metric(
+        "CE Premium",
+        f"{ce:,.2f}"
+    )
+
+    c3.metric(
+        "PE Premium",
+        f"{pe:,.2f}"
+    )
+
+    c4.metric(
+        "CE - PE Difference",
+        f"{ce - pe:,.2f}"
+    )
+
+    # ---------------------------------------------------------
+    # 1. NIFTY COI
+    # 2. BANKNIFTY COI
+    # ---------------------------------------------------------
+    for title, symbol in [
+        ("1. NIFTY COI", "NIFTY"),
+        ("2. NIFTY BANK COI", "BANKNIFTY")
     ]:
-        fig.add_trace(go.Bar(name=name, x=[x], y=[oi[x][s]]))
-    fig.update_layout(barmode="group", height=450, yaxis_title="Open Interest", hovermode="x unified")
-    st.plotly_chart(fig, use_container_width=True, key="overall_oi_chart")
 
-    for title, data, orange in [
-        ("4. NIFTY Strike Price-wise OI", nifty, False),
-        ("5. NIFTY Bank Strike Price-wise OI", bank, True),
-    ]:
-        st.subheader(title)
-        d = strike_wise_oi(data, 10)
-        fig = go.Figure()
-        fig.add_trace(go.Bar(x=d.strikePrice, y=d.CE_OI, name="CE OI",
-                             marker_color="orange" if orange else None))
-        fig.add_trace(go.Bar(x=d.strikePrice, y=d.PE_OI, name="PE OI",
-                             marker_color="moccasin" if orange else None))
-        fig.update_layout(barmode="group", height=500, xaxis_title="Strike Price",
-                          yaxis_title="Open Interest", hovermode="x unified")
-        st.plotly_chart(fig, use_container_width=True, key=f"strike_oi_chart_{title}")
-
-col1, col2 = st.columns(2)
-
-max_pain_items = [
-    (col1, "6. NIFTY Max Pain", "NIFTY", "max_pain_chart_nifty"),
-    (col2, "7. NIFTY Bank Max Pain", "BANKNIFTY", "max_pain_chart_banknifty"),
-]
-
-for col, title, symbol, chart_key in max_pain_items:
-    with col:
         st.subheader(title)
 
-        data = get_data(symbol)
+        hist_date = choose_display_date(
+            symbol,
+            now
+        )
 
-        mp, pain = max_pain(data, True)
-        pain = pain.sort_values("strikePrice").reset_index(drop=True)
-
-        idx = pain.index[pain.strikePrice == mp][0]
-        pain = pain.iloc[max(0, idx - 15):min(len(pain), idx + 16)]
-
-        fig = go.Figure()
-
-        fig.add_trace(
-            go.Bar(
-                x=pain.strikePrice,
-                y=pain.totalPain,
-                name="Total Pain"
+        hist = (
+            load_intraday_history(
+                symbol,
+                hist_date
             )
+            if hist_date
+            else pd.DataFrame()
         )
 
-        fig.add_vline(
-            x=mp,
-            line_dash="dash",
-            line_color="red",
-            annotation_text=f"Max Pain: {mp}",
-            annotation_font_color="red"
-        )
+        fig = go.Figure()
+
+        if not hist.empty:
+
+            fig.add_trace(
+                go.Scatter(
+                    x=hist["timestamp"],
+                    y=hist["cumulative_coi"],
+                    mode="lines+markers",
+                    name="COI",
+                )
+            )
+
+        else:
+
+            fig.add_annotation(
+                text="No intraday COI history available.",
+                x=.5,
+                y=.5,
+                xref="paper",
+                yref="paper",
+                showarrow=False
+            )
 
         fig.update_layout(
-            height=450,
-            xaxis_title="Strike Price",
-            yaxis_title="Total Pain"
+            height=400,
+            xaxis_title="Time",
+            yaxis_title="Cumulative COI",
+            hovermode="x unified"
         )
 
         st.plotly_chart(
             fig,
             use_container_width=True,
-            key=chart_key
+            key=f"coi_chart_{symbol}"
         )
 
+    # ---------------------------------------------------------
+    # 3. Overall Open Interest
+    # ---------------------------------------------------------
+    st.subheader("3. Overall Open Interest")
+
+    oi = overall_oi(
+        nifty,
+        bank
+    )
+
+    fig = go.Figure()
+
+    for name, x, s in [
+        ("NIFTY CE", "NIFTY", "CE"),
+        ("NIFTY PE", "NIFTY", "PE"),
+        ("BANKNIFTY CE", "BANKNIFTY", "CE"),
+        ("BANKNIFTY PE", "BANKNIFTY", "PE")
+    ]:
+
+        fig.add_trace(
+            go.Bar(
+                name=name,
+                x=[x],
+                y=[oi[x][s]]
+            )
+        )
+
+    fig.update_layout(
+        barmode="group",
+        height=450,
+        yaxis_title="Open Interest",
+        hovermode="x unified"
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        key="overall_oi_chart"
+    )
+
+    # ---------------------------------------------------------
+    # 4. NIFTY Strike Price-wise OI
+    # 5. BANKNIFTY Strike Price-wise OI
+    # ---------------------------------------------------------
+    for title, data, orange in [
+        ("4. NIFTY Strike Price-wise OI", nifty, False),
+        ("5. NIFTY Bank Strike Price-wise OI", bank, True),
+    ]:
+
+        st.subheader(title)
+
+        d = strike_wise_oi(
+            data,
+            10
+        )
+
+        fig = go.Figure()
+
+        fig.add_trace(
+            go.Bar(
+                x=d.strikePrice,
+                y=d.CE_OI,
+                name="CE OI",
+                marker_color="orange" if orange else None
+            )
+        )
+
+        fig.add_trace(
+            go.Bar(
+                x=d.strikePrice,
+                y=d.PE_OI,
+                name="PE OI",
+                marker_color="moccasin" if orange else None
+            )
+        )
+
+        fig.update_layout(
+            barmode="group",
+            height=500,
+            xaxis_title="Strike Price",
+            yaxis_title="Open Interest",
+            hovermode="x unified"
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True,
+            key=f"strike_oi_chart_{title}"
+        )
+
+    # ---------------------------------------------------------
+    # 6. NIFTY Max Pain
+    # 7. BANKNIFTY Max Pain
+    #
+    # SIDE-BY-SIDE VISUALIZATION
+    # ---------------------------------------------------------
+    col1, col2 = st.columns(2)
+
+    max_pain_items = [
+        (
+            col1,
+            "6. NIFTY Max Pain",
+            nifty,
+            "max_pain_chart_nifty"
+        ),
+        (
+            col2,
+            "7. BANKNIFTY Max Pain",
+            bank,
+            "max_pain_chart_banknifty"
+        ),
+    ]
+
+    for col, title, data, chart_key in max_pain_items:
+
+        with col:
+
+            st.subheader(title)
+
+            mp, pain = max_pain(
+                data,
+                True
+            )
+
+            pain = (
+                pain
+                .sort_values("strikePrice")
+                .reset_index(drop=True)
+            )
+
+            idx = pain.index[
+                pain.strikePrice == mp
+            ][0]
+
+            # 15 strikes before + Max Pain + 15 strikes after
+            pain = pain.iloc[
+                max(0, idx - 15):
+                min(len(pain), idx + 16)
+            ]
+
+            fig = go.Figure()
+
+            fig.add_trace(
+                go.Bar(
+                    x=pain.strikePrice,
+                    y=pain.totalPain,
+                    name="Total Pain"
+                )
+            )
+
+            fig.add_vline(
+                x=mp,
+                line_dash="dash",
+                line_color="red",
+                annotation_text=f"Max Pain: {mp}",
+                annotation_font_color="red"
+            )
+
+            fig.update_layout(
+                height=450,
+                xaxis_title="Strike Price",
+                yaxis_title="Total Pain",
+                hovermode="x unified",
+                margin=dict(
+                    l=45,
+                    r=20,
+                    t=40,
+                    b=45
+                )
+            )
+
+            st.plotly_chart(
+                fig,
+                use_container_width=True,
+                key=chart_key
+            )
+
+    # ---------------------------------------------------------
+    # Architecture caption
+    # ---------------------------------------------------------
     st.caption(
-        "Architecture: NSE → Supabase Cron → Edge Function → Supabase → Streamlit. "
+        "Architecture: NSE → Supabase Cron → Edge Function → "
+        "Supabase → Streamlit. "
         "The Streamlit dashboard never fetches NSE or writes snapshots."
     )
 
