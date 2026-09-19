@@ -15,6 +15,7 @@ from calculations import (
     previous_saved_trading_date,
     load_latest_snapshot_on_or_before,
     load_nifty_futures_history,
+    load_buddy_dashboard_history,
 )
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -830,6 +831,22 @@ def render_dashboard():
                 key=chart_key
             )
 
+    # ============================================================
+    # BUDDY ANALYSIS
+    # ============================================================
+    
+    st.subheader("BUDDY Analysis")
+    
+    buddy_df = load_buddy_dashboard_history(limit=20)
+    
+    if buddy_df.empty:
+        st.info("No BUDDY analysis snapshots available yet.")
+    else:
+        st.dataframe(
+            buddy_df,
+            use_container_width=True,
+            hide_index=True
+        )
 
 # ============================================================
 # AUTO REFRESH
