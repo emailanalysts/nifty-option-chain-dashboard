@@ -175,6 +175,7 @@ def render_dashboard_title(now, nifty_date, bank_date):
     else:
         st.title("🔴 NSE Option Chain Dashboard")
 
+
 # ============================================================
 # MAIN DASHBOARD
 # ============================================================
@@ -200,26 +201,27 @@ def render_dashboard():
     # ---------------------------------------------------------
     # Title + Refresh
     # ---------------------------------------------------------
-    
+
     col_title, col_refresh = st.columns([8, 1])
-    
+
     with col_title:
-    
+
         render_dashboard_title(
             now,
             nifty_date,
             bank_date
         )
-    
+
     with col_refresh:
-    
+
         if st.button(
             "🔄 Refresh",
             use_container_width=True
         ):
-    
+
             st.cache_data.clear()
             st.rerun()
+
     # ---------------------------------------------------------
     # No data available
     # ---------------------------------------------------------
@@ -368,12 +370,12 @@ def render_dashboard():
     )
 
     # =========================================================
-    # 1 & 2. COI + CE/PE OI — DUAL Y-AXIS
+    # 1 & 3. COI + CE/PE OI — DUAL Y-AXIS
     # =========================================================
 
     for title, symbol in [
         ("1. NIFTY COI", "NIFTY"),
-        ("2. NIFTY BANK COI", "BANKNIFTY"),
+        ("3. NIFTY BANK COI", "BANKNIFTY"),
     ]:
 
         st.subheader(title)
@@ -512,11 +514,112 @@ def render_dashboard():
             key=f"coi_chart_{symbol}",
         )
 
+        # =====================================================
+        # 2. NIFTY FUTURES — PRICE + VWAP
+        # =====================================================
+
+        if symbol == "NIFTY":
+
+            st.subheader(
+                "2. NIFTY Futures — Price & VWAP"
+            )
+
+            futures_date = choose_display_date(
+                "NIFTY",
+                now
+            )
+
+            futures_hist = (
+                load_nifty_futures_history(
+                    futures_date
+                )
+                if futures_date
+                else pd.DataFrame()
+            )
+
+            fig_futures = go.Figure()
+
+            if not futures_hist.empty:
+
+                # -------------------------------------------------
+                # NIFTY FUTURES PRICE
+                # -------------------------------------------------
+
+                fig_futures.add_trace(
+                    go.Scatter(
+                        x=futures_hist["timestamp"],
+                        y=futures_hist["price"],
+                        mode="lines",
+                        name="NIFTY Futures",
+                        line=dict(
+                            color="blue",
+                            width=2
+                        ),
+                    )
+                )
+
+                # -------------------------------------------------
+                # VWAP
+                # -------------------------------------------------
+
+                fig_futures.add_trace(
+                    go.Scatter(
+                        x=futures_hist["timestamp"],
+                        y=futures_hist["vwap"],
+                        mode="lines",
+                        name="VWAP",
+                        line=dict(
+                            color="orange",
+                            width=2
+                        ),
+                    )
+                )
+
+            else:
+
+                fig_futures.add_annotation(
+                    text="No NIFTY futures data available.",
+                    x=0.5,
+                    y=0.5,
+                    xref="paper",
+                    yref="paper",
+                    showarrow=False,
+                )
+
+            fig_futures.update_layout(
+
+                height=450,
+
+                xaxis=dict(
+                    title="Time",
+                ),
+
+                yaxis=dict(
+                    title="NIFTY Futures Price",
+                ),
+
+                hovermode="x unified",
+
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="left",
+                    x=0,
+                ),
+            )
+
+            st.plotly_chart(
+                fig_futures,
+                use_container_width=True,
+                key="nifty_futures_vwap_chart",
+            )
+
     # =========================================================
-    # 3. OVERALL OPEN INTEREST
+    # 4. OVERALL OPEN INTEREST
     # =========================================================
 
-    st.subheader("3. Overall Open Interest")
+    st.subheader("4. Overall Open Interest")
 
     oi = overall_oi(
         nifty,
@@ -556,7 +659,7 @@ def render_dashboard():
     )
 
     # =========================================================
-    # 4 & 5. STRIKE PRICE-WISE OI — SIDE BY SIDE
+    # 5 & 6. STRIKE PRICE-WISE OI — SIDE BY SIDE
     # =========================================================
 
     col1, col2 = st.columns(2)
@@ -565,7 +668,7 @@ def render_dashboard():
 
         (
             col1,
-            "4. NIFTY Strike Price-wise OI",
+            "5. NIFTY Strike Price-wise OI",
             nifty,
             False,
             "strike_oi_chart_nifty"
@@ -573,7 +676,7 @@ def render_dashboard():
 
         (
             col2,
-            "5. NIFTY Bank Strike Price-wise OI",
+            "6. NIFTY Bank Strike Price-wise OI",
             bank,
             True,
             "strike_oi_chart_banknifty"
@@ -637,7 +740,7 @@ def render_dashboard():
             )
 
     # =========================================================
-    # 6 & 7. MAX PAIN — SIDE BY SIDE
+    # 7 & 8. MAX PAIN — SIDE BY SIDE
     # =========================================================
 
     col1, col2 = st.columns(2)
@@ -646,14 +749,14 @@ def render_dashboard():
 
         (
             col1,
-            "6. NIFTY Max Pain",
+            "7. NIFTY Max Pain",
             nifty,
             "max_pain_chart_nifty"
         ),
 
         (
             col2,
-            "7. BANKNIFTY Max Pain",
+            "8. BANKNIFTY Max Pain",
             bank,
             "max_pain_chart_banknifty"
         ),
@@ -726,113 +829,6 @@ def render_dashboard():
                 use_container_width=True,
                 key=chart_key
             )
-    # =========================================================
-    # 8. NIFTY FUTURES — PRICE + VWAP
-    # =========================================================
-    
-    st.subheader("8. NIFTY Futures — Price & VWAP")
-    
-    futures_date = choose_display_date(
-        "NIFTY",
-        now
-    )
-    
-    futures_hist = (
-        load_nifty_futures_history(
-            futures_date
-        )
-        if futures_date
-        else pd.DataFrame()
-    )
-    
-    fig = go.Figure()
-    
-    if not futures_hist.empty:
-    
-        # -----------------------------------------------------
-        # NIFTY FUTURES PRICE
-        # -----------------------------------------------------
-    
-        fig.add_trace(
-            go.Scatter(
-                x=futures_hist["timestamp"],
-                y=futures_hist["price"],
-                mode="lines",
-                name="NIFTY Futures",
-                line=dict(
-                    color="blue",
-                    width=2
-                ),
-            )
-        )
-    
-        # -----------------------------------------------------
-        # VWAP
-        # -----------------------------------------------------
-    
-        fig.add_trace(
-            go.Scatter(
-                x=futures_hist["timestamp"],
-                y=futures_hist["vwap"],
-                mode="lines",
-                name="VWAP",
-                line=dict(
-                    color="orange",
-                    width=2
-                ),
-            )
-        )
-    
-    else:
-    
-        fig.add_annotation(
-            text="No NIFTY futures data available.",
-            x=0.5,
-            y=0.5,
-            xref="paper",
-            yref="paper",
-            showarrow=False,
-        )
-    
-    
-    fig.update_layout(
-    
-        height=450,
-    
-        xaxis=dict(
-            title="Time",
-        ),
-    
-        yaxis=dict(
-            title="NIFTY Futures Price",
-        ),
-    
-        hovermode="x unified",
-    
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="left",
-            x=0,
-        ),
-    
-    )
-    
-    st.plotly_chart(
-        fig,
-        use_container_width=True,
-        key="nifty_futures_vwap_chart",
-    )
-    # =========================================================
-    # ARCHITECTURE
-    # =========================================================
-
-    # st.caption(
-    #     "Architecture: NSE → Supabase Cron → Edge Function → "
-    #     "Supabase → Streamlit. "
-    #     "The Streamlit dashboard never fetches NSE or writes snapshots."
-    # )
 
 
 # ============================================================
