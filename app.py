@@ -157,69 +157,53 @@ def snapshot_age_minutes(symbol, now):
 # DASHBOARD TITLE
 # ============================================================
 
-def render_dashboard_title(
-    now,
-    nifty_date,
-    bank_date
-):
+def render_dashboard_title(now, nifty_date, bank_date):
 
     today = now.date().isoformat()
 
-    # --------------------------------------------------------
-    # LIVE only when:
-    #
+    # Green only when:
     # 1. Market is currently open
     # 2. NIFTY has today's data
     # 3. BANKNIFTY has today's data
-    #
-    # Otherwise dashboard is showing the latest completed
-    # trading-day data.
-    # --------------------------------------------------------
 
-    live_data = (
+    live = (
         market_hours(now)
         and nifty_date == today
         and bank_date == today
     )
 
-    if live_data:
-        dot_color = "#00C853"   # Green
+    if live:
+        dot_color = "#00C853"
     else:
-        dot_color = "#FF1744"   # Red
-
-    # --------------------------------------------------------
-    # Title + status dot
-    # --------------------------------------------------------
+        dot_color = "#FF1744"
 
     st.markdown(
         f"""
         <div style="
             display:flex;
             align-items:center;
-            gap:10px;
-            margin-top:4px;
-            margin-bottom:8px;
+            margin-top:5px;
+            margin-bottom:10px;
         ">
 
             <span style="
-                width:14px;
-                height:14px;
-                min-width:14px;
-                background:{dot_color};
-                border-radius:50%;
                 display:inline-block;
-                box-shadow:0 0 7px {dot_color};
+                width:13px;
+                height:13px;
+                min-width:13px;
+                border-radius:50%;
+                background-color:{dot_color};
+                margin-right:10px;
+                box-shadow:0 0 6px {dot_color};
             "></span>
 
-            <h1 style="
-                margin:0;
-                padding:0;
+            <span style="
                 font-size:34px;
                 font-weight:700;
                 line-height:1.2;
             ">
                 NSE Option Chain Dashboard
-            </h1>
+            </span>
 
         </div>
         """,
@@ -250,46 +234,73 @@ def render_dashboard():
     )
 
     # ---------------------------------------------------------
+    # Title + Refresh
+    # ---------------------------------------------------------
+
+    col_title, col_refresh = st.columns([8, 1])
+
+    with col_title:
+
+        if nifty.empty or bank.empty:
+
+            # No data yet = RED status
+
+            st.markdown(
+                """
+                <div style="
+                    display:flex;
+                    align-items:center;
+                    margin-top:5px;
+                    margin-bottom:10px;
+                ">
+
+                    <span style="
+                        display:inline-block;
+                        width:13px;
+                        height:13px;
+                        min-width:13px;
+                        border-radius:50%;
+                        background-color:#FF1744;
+                        margin-right:10px;
+                        box-shadow:0 0 6px #FF1744;
+                    "></span>
+
+                    <span style="
+                        font-size:34px;
+                        font-weight:700;
+                        line-height:1.2;
+                    ">
+                        NSE Option Chain Dashboard
+                    </span>
+
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        else:
+
+            render_dashboard_title(
+                now,
+                nifty_date,
+                bank_date
+            )
+
+    with col_refresh:
+
+        if st.button(
+            "🔄 Refresh",
+            use_container_width=True
+        ):
+
+            st.cache_data.clear()
+            st.rerun()
+
+    # ---------------------------------------------------------
     # No data available
     # ---------------------------------------------------------
 
     if nifty.empty or bank.empty:
-
-        # If there is no data yet, show red status.
-        st.markdown(
-            """
-            <div style="
-                display:flex;
-                align-items:center;
-                gap:10px;
-                margin-top:4px;
-                margin-bottom:8px;
-            ">
-
-                <span style="
-                    width:14px;
-                    height:14px;
-                    min-width:14px;
-                    background:#FF1744;
-                    border-radius:50%;
-                    display:inline-block;
-                    box-shadow:0 0 7px #FF1744;
-                "></span>
-
-                <h1 style="
-                    margin:0;
-                    padding:0;
-                    font-size:34px;
-                    font-weight:700;
-                    line-height:1.2;
-                ">
-                    NSE Option Chain Dashboard
-                </h1>
-
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
 
         st.warning(
             "No option-chain snapshot is available in Supabase yet."
@@ -303,38 +314,20 @@ def render_dashboard():
         return
 
     # ---------------------------------------------------------
-    # Title
+    # Determine live mode
     # ---------------------------------------------------------
 
-    col_title, col_refresh = st.columns([8, 1])
-
-    with col_title:
-
-        render_dashboard_title(
-            now,
-            nifty_date,
-            bank_date
-        )
-
-    with col_refresh:
-
-        if st.button(
-            "🔄 Refresh",
-            use_container_width=True
-        ):
-
-            st.cache_data.clear()
-            st.rerun()
-
-    # ---------------------------------------------------------
-    # Collector freshness
-    # ---------------------------------------------------------
+    today = now.date().isoformat()
 
     live = (
         market_hours(now)
-        and nifty_date == now.date().isoformat()
-        and bank_date == now.date().isoformat()
+        and nifty_date == today
+        and bank_date == today
     )
+
+    # =========================================================
+    # COLLECTOR FRESHNESS
+    # =========================================================
 
     if live:
 
