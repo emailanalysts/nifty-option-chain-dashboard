@@ -373,56 +373,56 @@ def render_dashboard():
         key="overall_oi_chart"
     )
 
-    # ---------------------------------------------------------
-    # 4. NIFTY Strike Price-wise OI
-    # 5. BANKNIFTY Strike Price-wise OI
-    # ---------------------------------------------------------
-    for title, data, orange in [
-        ("4. NIFTY Strike Price-wise OI", nifty, False),
-        ("5. NIFTY Bank Strike Price-wise OI", bank, True),
-    ]:
-
-        st.subheader(title)
-
-        d = strike_wise_oi(
-            data,
-            10
-        )
-
-        fig = go.Figure()
-
-        fig.add_trace(
-            go.Bar(
-                x=d.strikePrice,
-                y=d.CE_OI,
-                name="CE OI",
-                marker_color="orange" if orange else None
+    # ============================================================
+    # 4 & 5. Strike Price-wise OI — Side by Side
+    # ============================================================
+    
+    col1, col2 = st.columns(2)
+    
+    strike_oi_items = [
+        (col1, "4. NIFTY Strike Price-wise OI", nifty, False, "strike_oi_chart_nifty"),
+        (col2, "5. NIFTY Bank Strike Price-wise OI", bank, True, "strike_oi_chart_banknifty"),
+    ]
+    
+    for col, title, data, orange, chart_key in strike_oi_items:
+        with col:
+            st.subheader(title)
+    
+            d = strike_wise_oi(data, 10)
+    
+            fig = go.Figure()
+    
+            fig.add_trace(
+                go.Bar(
+                    x=d.strikePrice,
+                    y=d.CE_OI,
+                    name="CE OI",
+                    marker_color="orange" if orange else None,
+                )
             )
-        )
-
-        fig.add_trace(
-            go.Bar(
-                x=d.strikePrice,
-                y=d.PE_OI,
-                name="PE OI",
-                marker_color="moccasin" if orange else None
+    
+            fig.add_trace(
+                go.Bar(
+                    x=d.strikePrice,
+                    y=d.PE_OI,
+                    name="PE OI",
+                    marker_color="moccasin" if orange else None,
+                )
             )
-        )
-
-        fig.update_layout(
-            barmode="group",
-            height=500,
-            xaxis_title="Strike Price",
-            yaxis_title="Open Interest",
-            hovermode="x unified"
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True,
-            key=f"strike_oi_chart_{title}"
-        )
-
+    
+            fig.update_layout(
+                barmode="group",
+                height=500,
+                xaxis_title="Strike Price",
+                yaxis_title="Open Interest",
+                hovermode="x unified",
+            )
+    
+            st.plotly_chart(
+                fig,
+                use_container_width=True,
+                key=chart_key,
+            )
     # ---------------------------------------------------------
     # 6. NIFTY Max Pain
     # 7. BANKNIFTY Max Pain
