@@ -249,7 +249,41 @@ def load_latest_snapshot_on_or_before(symbol, trading_date):
     df["expiryDate"] = pd.Timestamp(expiry)
     df["symbol"] = symbol
     return prepare_chain(df, symbol)
+    
+def load_buddy_dashboard_history(limit=20):
+    """
+    Load the BUDDY output required by the Streamlit dashboard.
+    """
 
+    df = _read_df(
+        """
+        SELECT
+            snapshot_time,
+            selected_strike AS strike,
+            buddy_score,
+            v12_status AS "V12",
+            v13_status AS "V13",
+            v14_status AS "V14",
+            v152_status AS "V15.2",
+            final_signal
+        FROM buddy_analysis_snapshots
+        ORDER BY snapshot_time DESC
+        LIMIT %s
+        """,
+        (limit,),
+    )
+
+    if df.empty:
+        return df
+
+    # Convert UTC database timestamp to IST
+    df["snapshot_time"] = (
+        pd.to_datetime(df["snapshot_time"], utc=True)
+        .dt.tz_convert(IST)
+        .dt.strftime("%d-%b-%Y %H:%M:%S")
+    )
+
+    return df
 # ============================================================
 # NIFTY FUTURES HISTORY
 # ============================================================
