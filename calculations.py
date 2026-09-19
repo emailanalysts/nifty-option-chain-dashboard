@@ -249,3 +249,57 @@ def load_latest_snapshot_on_or_before(symbol, trading_date):
     df["expiryDate"] = pd.Timestamp(expiry)
     df["symbol"] = symbol
     return prepare_chain(df, symbol)
+
+# ============================================================
+# NIFTY FUTURES HISTORY
+# ============================================================
+
+def load_nifty_futures_history(trading_date=None):
+
+    date_value = (
+        pd.Timestamp(trading_date).date()
+        if trading_date
+        else datetime.now(IST).date()
+    )
+
+    df = _read_df(
+        """
+        SELECT
+            snapshot_time AS timestamp,
+            trading_date,
+            expiry_date AS expiry,
+            price,
+            volume,
+            cumulative_volume,
+            vwap
+        FROM nifty_futures_snapshots
+        WHERE trading_date=%s
+        ORDER BY snapshot_time
+        """,
+        (date_value,),
+    )
+
+    if df.empty:
+        return df
+
+    df["timestamp"] = (
+        pd.to_datetime(
+            df["timestamp"],
+            utc=True
+        )
+        .dt.tz_convert(IST)
+    )
+
+    for col in [
+        "price",
+        "volume",
+        "cumulative_volume",
+        "vwap",
+    ]:
+
+        df[col] = pd.to_numeric(
+            df[col],
+            errors="coerce"
+        )
+
+    return df
