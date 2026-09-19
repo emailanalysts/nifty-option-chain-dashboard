@@ -21,35 +21,77 @@ IST = ZoneInfo("Asia/Kolkata")
 MARKET_OPEN = dt_time(9, 15)
 MARKET_CLOSE = dt_time(15, 30)
 
-st.set_page_config(page_title="NSE Option Chain Dashboard", layout="wide")
+st.set_page_config(
+    page_title="NSE Option Chain Dashboard",
+    layout="wide"
+)
 
 st.markdown("""
 <style>
-html, body, [class*="css"] { font-size: 85% !important; }
-.stApp { font-size: 85% !important; }
-h1 { font-size: 1.8rem !important; }
-h2 { font-size: 1.45rem !important; }
-h3 { font-size: 1.2rem !important; }
-[data-testid="stMetricValue"] { font-size: 1.35rem !important; }
-[data-testid="stMetricLabel"] { font-size: 0.8rem !important; }
-[data-testid="stMetricDelta"] { font-size: 0.75rem !important; }
-button { font-size: 0.8rem !important; }
+html, body, [class*="css"] {
+    font-size: 85% !important;
+}
+
+.stApp {
+    font-size: 85% !important;
+}
+
+h1 {
+    font-size: 1.8rem !important;
+}
+
+h2 {
+    font-size: 1.45rem !important;
+}
+
+h3 {
+    font-size: 1.2rem !important;
+}
+
+[data-testid="stMetricValue"] {
+    font-size: 1.35rem !important;
+}
+
+[data-testid="stMetricLabel"] {
+    font-size: 0.8rem !important;
+}
+
+[data-testid="stMetricDelta"] {
+    font-size: 0.75rem !important;
+}
+
+button {
+    font-size: 0.8rem !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
+
+# ============================================================
+# TIME FUNCTIONS
+# ============================================================
 
 def ist_now():
     return datetime.now(IST)
 
 
 def market_hours(now):
-    return now.weekday() < 5 and MARKET_OPEN <= now.time() <= MARKET_CLOSE
+    return (
+        now.weekday() < 5
+        and MARKET_OPEN <= now.time() <= MARKET_CLOSE
+    )
 
+
+# ============================================================
+# DATABASE STATUS
+# ============================================================
 
 def render_database_status():
+
     status = database_status()
 
     if status["connected"]:
+
         latest = status["latest"] or "No snapshots yet"
 
         st.success(
@@ -57,14 +99,23 @@ def render_database_status():
             f"{status['count']:,} snapshots • Latest: {latest}",
             icon=None,
         )
+
     else:
+
         st.error(
-            f"🔴 Database Status: NOT CONNECTED • {status['error']}"
+            f"🔴 Database Status: NOT CONNECTED • "
+            f"{status['error']}"
         )
 
 
+# ============================================================
+# DISPLAY DATE
+# ============================================================
+
 def choose_display_date(symbol, now):
+
     today = now.date().isoformat()
+
     latest = latest_saved_trading_date(symbol)
 
     if latest == today:
@@ -73,16 +124,29 @@ def choose_display_date(symbol, now):
     return latest
 
 
+# ============================================================
+# LOAD DISPLAY DATA
+# ============================================================
+
 def load_display_data(symbol, now):
+
     target = choose_display_date(symbol, now)
 
     if not target:
         return pd.DataFrame(), None
 
-    return load_latest_snapshot_on_or_before(symbol, target), target
+    return (
+        load_latest_snapshot_on_or_before(symbol, target),
+        target
+    )
 
+
+# ============================================================
+# SNAPSHOT AGE
+# ============================================================
 
 def snapshot_age_minutes(symbol, now):
+
     target = choose_display_date(symbol, now)
 
     if not target:
@@ -101,7 +165,15 @@ def snapshot_age_minutes(symbol, now):
     )
 
 
+# ============================================================
+# MAIN DASHBOARD
+# ============================================================
+
 def render_dashboard():
+
+    # ---------------------------------------------------------
+    # Database status
+    # ---------------------------------------------------------
 
     render_database_status()
 
@@ -109,12 +181,21 @@ def render_dashboard():
     live = market_hours(now)
 
     # ---------------------------------------------------------
-    # Load current/last available data
+    # Load current / last available data
     # ---------------------------------------------------------
-    nifty, nifty_date = load_display_data("NIFTY", now)
-    bank, bank_date = load_display_data("BANKNIFTY", now)
+
+    nifty, nifty_date = load_display_data(
+        "NIFTY",
+        now
+    )
+
+    bank, bank_date = load_display_data(
+        "BANKNIFTY",
+        now
+    )
 
     if nifty.empty or bank.empty:
+
         st.warning(
             "No option-chain snapshot is available in Supabase yet."
         )
@@ -129,8 +210,11 @@ def render_dashboard():
     data_date = nifty_date or bank_date
 
     if live and data_date == now.date().isoformat():
+
         mode = "LIVE • Supabase collector"
+
     else:
+
         mode = (
             "PREVIOUS COMPLETED TRADING DAY • "
             "Market closed / awaiting first snapshot"
@@ -139,6 +223,7 @@ def render_dashboard():
     # ---------------------------------------------------------
     # Title + Refresh
     # ---------------------------------------------------------
+
     col_title, col_refresh = st.columns([8, 1])
 
     with col_title:
@@ -157,20 +242,32 @@ def render_dashboard():
             "🔄 Refresh",
             use_container_width=True
         ):
+
             st.cache_data.clear()
             st.rerun()
 
     # ---------------------------------------------------------
     # Collector freshness
     # ---------------------------------------------------------
+
     if live:
 
-        age_n = snapshot_age_minutes("NIFTY", now)
-        age_b = snapshot_age_minutes("BANKNIFTY", now)
+        age_n = snapshot_age_minutes(
+            "NIFTY",
+            now
+        )
+
+        age_b = snapshot_age_minutes(
+            "BANKNIFTY",
+            now
+        )
 
         if age_n is not None and age_b is not None:
 
-            age = max(age_n, age_b)
+            age = max(
+                age_n,
+                age_b
+            )
 
             if age > 6:
 
@@ -189,9 +286,10 @@ def render_dashboard():
                     icon=None,
                 )
 
-    # ---------------------------------------------------------
-    # NIFTY summary
-    # ---------------------------------------------------------
+    # =========================================================
+    # NIFTY SUMMARY
+    # =========================================================
+
     ne = nifty["expiryDate"].iloc[0]
 
     n1, n2, n3 = st.columns(3)
@@ -211,9 +309,10 @@ def render_dashboard():
         f'{max_pain(nifty):,.0f}'
     )
 
-    # ---------------------------------------------------------
-    # BANKNIFTY summary
-    # ---------------------------------------------------------
+    # =========================================================
+    # BANKNIFTY SUMMARY
+    # =========================================================
+
     be = bank["expiryDate"].iloc[0]
 
     b1, b2, b3 = st.columns(3)
@@ -233,9 +332,10 @@ def render_dashboard():
         f'{max_pain(bank):,.0f}'
     )
 
-    # ---------------------------------------------------------
-    # NIFTY ATM Premium
-    # ---------------------------------------------------------
+    # =========================================================
+    # NIFTY ATM PREMIUM
+    # =========================================================
+
     st.divider()
 
     st.subheader("NIFTY ATM Strike Premium")
@@ -271,121 +371,149 @@ def render_dashboard():
         f"{ce - pe:,.2f}"
     )
 
-# ============================================================
-# 1 & 2. COI + CE/PE Open Interest on Secondary Y-Axis
-# ============================================================
+    # =========================================================
+    # 1 & 2. COI + CE/PE OI — DUAL Y-AXIS
+    # =========================================================
 
-for title, symbol in [
-    ("1. NIFTY COI", "NIFTY"),
-    ("2. NIFTY BANK COI", "BANKNIFTY"),
-]:
-    st.subheader(title)
+    for title, symbol in [
+        ("1. NIFTY COI", "NIFTY"),
+        ("2. NIFTY BANK COI", "BANKNIFTY"),
+    ]:
 
-    hist_date = choose_display_date(symbol, now)
-    hist = load_intraday_history(symbol, hist_date) if hist_date else pd.DataFrame()
+        st.subheader(title)
 
-    fig = go.Figure()
-
-    if not hist.empty:
-
-        # ----------------------------------------------------
-        # Primary Y-axis: Cumulative COI
-        # ----------------------------------------------------
-        fig.add_trace(
-            go.Scatter(
-                x=hist["timestamp"],
-                y=hist["cumulative_coi"],
-                mode="lines+markers",
-                name="Cumulative COI",
-                yaxis="y",
-            )
+        hist_date = choose_display_date(
+            symbol,
+            now
         )
 
-        # ----------------------------------------------------
-        # Secondary Y-axis: CE / PE Open Interest
-        # ----------------------------------------------------
-        if symbol == "NIFTY":
-            ce_col = "CE_OI"
-            pe_col = "PE_OI"
-            ce_name = "NIFTY CE OI"
-            pe_name = "NIFTY PE OI"
+        hist = (
+            load_intraday_history(
+                symbol,
+                hist_date
+            )
+            if hist_date
+            else pd.DataFrame()
+        )
+
+        fig = go.Figure()
+
+        if not hist.empty:
+
+            # -------------------------------------------------
+            # PRIMARY Y-AXIS
+            # Cumulative COI
+            # -------------------------------------------------
+
+            fig.add_trace(
+                go.Scatter(
+                    x=hist["timestamp"],
+                    y=hist["cumulative_coi"],
+                    mode="lines+markers",
+                    name="Cumulative COI",
+                    yaxis="y",
+                )
+            )
+
+            # -------------------------------------------------
+            # SECONDARY Y-AXIS
+            # CE / PE OPEN INTEREST
+            # -------------------------------------------------
+
+            if symbol == "NIFTY":
+
+                ce_name = "NIFTY CE OI"
+                pe_name = "NIFTY PE OI"
+
+            else:
+
+                ce_name = "NIFTY BANK CE OI"
+                pe_name = "NIFTY BANK PE OI"
+
+            # CE OI
+            if "CE_OI" in hist.columns:
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=hist["timestamp"],
+                        y=hist["CE_OI"],
+                        mode="lines+markers",
+                        name=ce_name,
+                        yaxis="y2",
+                    )
+                )
+
+            # PE OI
+            if "PE_OI" in hist.columns:
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=hist["timestamp"],
+                        y=hist["PE_OI"],
+                        mode="lines+markers",
+                        name=pe_name,
+                        yaxis="y2",
+                    )
+                )
+
         else:
-            ce_col = "CE_OI"
-            pe_col = "PE_OI"
-            ce_name = "NIFTY BANK CE OI"
-            pe_name = "NIFTY BANK PE OI"
 
-        # CE OI
-        if ce_col in hist.columns:
-            fig.add_trace(
-                go.Scatter(
-                    x=hist["timestamp"],
-                    y=hist[ce_col],
-                    mode="lines+markers",
-                    name=ce_name,
-                    yaxis="y2",
-                )
+            fig.add_annotation(
+                text="No intraday COI history available.",
+                x=0.5,
+                y=0.5,
+                xref="paper",
+                yref="paper",
+                showarrow=False,
             )
 
-        # PE OI
-        if pe_col in hist.columns:
-            fig.add_trace(
-                go.Scatter(
-                    x=hist["timestamp"],
-                    y=hist[pe_col],
-                    mode="lines+markers",
-                    name=pe_name,
-                    yaxis="y2",
-                )
-            )
+        # -----------------------------------------------------
+        # DUAL Y-AXIS LAYOUT
+        # -----------------------------------------------------
 
-    else:
-        fig.add_annotation(
-            text="No intraday COI history available.",
-            x=.5,
-            y=.5,
-            xref="paper",
-            yref="paper",
-            showarrow=False,
+        fig.update_layout(
+
+            height=400,
+
+            xaxis=dict(
+                title="Time",
+            ),
+
+            # LEFT AXIS
+            yaxis=dict(
+                title="Cumulative COI",
+                side="left",
+            ),
+
+            # RIGHT AXIS
+            yaxis2=dict(
+                title="Open Interest",
+                overlaying="y",
+                side="right",
+                showgrid=False,
+            ),
+
+            hovermode="x unified",
+
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="left",
+                x=0,
+            ),
         )
 
-    # --------------------------------------------------------
-    # Layout with secondary Y-axis
-    # --------------------------------------------------------
-    fig.update_layout(
-        height=400,
-        xaxis=dict(
-            title="Time",
-        ),
-        yaxis=dict(
-            title="Cumulative COI",
-            side="left",
-        ),
-        yaxis2=dict(
-            title="Open Interest",
-            overlaying="y",
-            side="right",
-            showgrid=False,
-        ),
-        hovermode="x unified",
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="left",
-            x=0,
-        ),
-    )
+        st.plotly_chart(
+            fig,
+            use_container_width=True,
+            key=f"coi_chart_{symbol}",
+        )
 
-    st.plotly_chart(
-        fig,
-        use_container_width=True,
-        key=f"coi_chart_{symbol}",
-    )
-    
-    # ---------------------------------------------------------
-    # 3. Overall Open Interest
-    # ---------------------------------------------------------
+    # =========================================================
+    # 3. OVERALL OPEN INTEREST
+    # =========================================================
+
     st.subheader("3. Overall Open Interest")
 
     oi = overall_oi(
@@ -396,10 +524,12 @@ for title, symbol in [
     fig = go.Figure()
 
     for name, x, s in [
+
         ("NIFTY CE", "NIFTY", "CE"),
         ("NIFTY PE", "NIFTY", "PE"),
         ("BANKNIFTY CE", "BANKNIFTY", "CE"),
         ("BANKNIFTY PE", "BANKNIFTY", "PE")
+
     ]:
 
         fig.add_trace(
@@ -423,43 +553,73 @@ for title, symbol in [
         key="overall_oi_chart"
     )
 
-    # ============================================================
-    # 4 & 5. Strike Price-wise OI — Side by Side
-    # ============================================================
-    
+    # =========================================================
+    # 4 & 5. STRIKE PRICE-WISE OI — SIDE BY SIDE
+    # =========================================================
+
     col1, col2 = st.columns(2)
-    
+
     strike_oi_items = [
-        (col1, "4. NIFTY Strike Price-wise OI", nifty, False, "strike_oi_chart_nifty"),
-        (col2, "5. NIFTY Bank Strike Price-wise OI", bank, True, "strike_oi_chart_banknifty"),
+
+        (
+            col1,
+            "4. NIFTY Strike Price-wise OI",
+            nifty,
+            False,
+            "strike_oi_chart_nifty"
+        ),
+
+        (
+            col2,
+            "5. NIFTY Bank Strike Price-wise OI",
+            bank,
+            True,
+            "strike_oi_chart_banknifty"
+        ),
+
     ]
-    
+
     for col, title, data, orange, chart_key in strike_oi_items:
+
         with col:
+
             st.subheader(title)
-    
-            d = strike_wise_oi(data, 10)
-    
+
+            d = strike_wise_oi(
+                data,
+                10
+            )
+
             fig = go.Figure()
-    
+
+            # CE OI
             fig.add_trace(
                 go.Bar(
                     x=d.strikePrice,
                     y=d.CE_OI,
                     name="CE OI",
-                    marker_color="orange" if orange else None,
+                    marker_color=(
+                        "orange"
+                        if orange
+                        else None
+                    ),
                 )
             )
-    
+
+            # PE OI
             fig.add_trace(
                 go.Bar(
                     x=d.strikePrice,
                     y=d.PE_OI,
                     name="PE OI",
-                    marker_color="moccasin" if orange else None,
+                    marker_color=(
+                        "moccasin"
+                        if orange
+                        else None
+                    ),
                 )
             )
-    
+
             fig.update_layout(
                 barmode="group",
                 height=500,
@@ -467,33 +627,35 @@ for title, symbol in [
                 yaxis_title="Open Interest",
                 hovermode="x unified",
             )
-    
+
             st.plotly_chart(
                 fig,
                 use_container_width=True,
                 key=chart_key,
             )
-    # ---------------------------------------------------------
-    # 6. NIFTY Max Pain
-    # 7. BANKNIFTY Max Pain
-    #
-    # SIDE-BY-SIDE VISUALIZATION
-    # ---------------------------------------------------------
+
+    # =========================================================
+    # 6 & 7. MAX PAIN — SIDE BY SIDE
+    # =========================================================
+
     col1, col2 = st.columns(2)
 
     max_pain_items = [
+
         (
             col1,
             "6. NIFTY Max Pain",
             nifty,
             "max_pain_chart_nifty"
         ),
+
         (
             col2,
             "7. BANKNIFTY Max Pain",
             bank,
             "max_pain_chart_banknifty"
         ),
+
     ]
 
     for col, title, data, chart_key in max_pain_items:
@@ -517,7 +679,10 @@ for title, symbol in [
                 pain.strikePrice == mp
             ][0]
 
-            # 15 strikes before + Max Pain + 15 strikes after
+            # 15 strikes before
+            # + Max Pain
+            # + 15 strikes after
+
             pain = pain.iloc[
                 max(0, idx - 15):
                 min(len(pain), idx + 16)
@@ -560,9 +725,10 @@ for title, symbol in [
                 key=chart_key
             )
 
-    # ---------------------------------------------------------
-    # Architecture caption
-    # ---------------------------------------------------------
+    # =========================================================
+    # ARCHITECTURE
+    # =========================================================
+
     st.caption(
         "Architecture: NSE → Supabase Cron → Edge Function → "
         "Supabase → Streamlit. "
@@ -570,8 +736,13 @@ for title, symbol in [
     )
 
 
+# ============================================================
+# AUTO REFRESH
+# ============================================================
+
 @st.fragment(run_every="3m")
 def auto_refresh_dashboard():
+
     render_dashboard()
 
 
