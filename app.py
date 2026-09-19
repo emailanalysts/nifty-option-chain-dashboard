@@ -433,28 +433,25 @@ def render_dashboard():
             # CE OI
             if "ce_oi" in hist.columns:
 
-                fig.add_trace(
-                    go.Scatter(
-                        x=hist["timestamp"],
-                        y=hist["ce_oi"],
-                        mode="lines+markers",
-                        name=ce_name,
-                        yaxis="y2",
-                    )
-                )
-
+                fig.add_trace(go.Scatter(
+                    x=hist["timestamp"],
+                    y=hist["ce_oi"],
+                    mode="lines+markers",
+                    name=ce_name,
+                    yaxis="y2",
+                    line=dict(width=2),
+                ))
             # PE OI
             if "pe_oi" in hist.columns:
 
-                fig.add_trace(
-                    go.Scatter(
-                        x=hist["timestamp"],
-                        y=hist["pe_oi"],
-                        mode="lines+markers",
-                        name=pe_name,
-                        yaxis="y2",
-                    )
-                )
+                fig.add_trace(go.Scatter(
+                    x=hist["timestamp"],
+                    y=hist["pe_oi"],
+                    mode="lines+markers",
+                    name=pe_name,
+                    yaxis="y2",
+                    line=dict(width=2),
+                ))
 
         else:
 
