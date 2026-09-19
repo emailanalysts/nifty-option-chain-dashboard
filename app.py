@@ -195,20 +195,53 @@ def render_dashboard():
 
 col1, col2 = st.columns(2)
 
-for col, title, data, chart_key in [(col1, "6. NIFTY Max Pain", nifty, "max_pain_chart_nifty"), (col2, "7. NIFTY Bank Max Pain", bank, "max_pain_chart_banknifty"),
-]:
+max_pain_items = [
+    (col1, "6. NIFTY Max Pain", "NIFTY", "max_pain_chart_nifty"),
+    (col2, "7. NIFTY Bank Max Pain", "BANKNIFTY", "max_pain_chart_banknifty"),
+]
+
+for col, title, symbol, chart_key in max_pain_items:
     with col:
         st.subheader(title)
+
+        data = get_data(symbol)
+
         mp, pain = max_pain(data, True)
         pain = pain.sort_values("strikePrice").reset_index(drop=True)
+
         idx = pain.index[pain.strikePrice == mp][0]
         pain = pain.iloc[max(0, idx - 15):min(len(pain), idx + 16)]
+
         fig = go.Figure()
-        fig.add_trace(go.Bar(x=pain.strikePrice, y=pain.totalPain, name="Total Pain"))
-        fig.add_vline(x=mp, line_dash="dash", line_color="red", annotation_text=f"Max Pain: {mp}", annotation_font_color="red")
-        fig.update_layout(height=450, xaxis_title="Strike Price", yaxis_title="Total Pain")
-        st.plotly_chart(fig, use_container_width=True, key=chart_key)
-    
+
+        fig.add_trace(
+            go.Bar(
+                x=pain.strikePrice,
+                y=pain.totalPain,
+                name="Total Pain"
+            )
+        )
+
+        fig.add_vline(
+            x=mp,
+            line_dash="dash",
+            line_color="red",
+            annotation_text=f"Max Pain: {mp}",
+            annotation_font_color="red"
+        )
+
+        fig.update_layout(
+            height=450,
+            xaxis_title="Strike Price",
+            yaxis_title="Total Pain"
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True,
+            key=chart_key
+        )
+
     st.caption(
         "Architecture: NSE → Supabase Cron → Edge Function → Supabase → Streamlit. "
         "The Streamlit dashboard never fetches NSE or writes snapshots."
