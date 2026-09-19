@@ -271,68 +271,118 @@ def render_dashboard():
         f"{ce - pe:,.2f}"
     )
 
-    # ---------------------------------------------------------
-    # 1. NIFTY COI
-    # 2. BANKNIFTY COI
-    # ---------------------------------------------------------
-    for title, symbol in [
-        ("1. NIFTY COI", "NIFTY"),
-        ("2. NIFTY BANK COI", "BANKNIFTY")
-    ]:
+# ============================================================
+# 1 & 2. COI + CE/PE Open Interest on Secondary Y-Axis
+# ============================================================
 
-        st.subheader(title)
+for title, symbol in [
+    ("1. NIFTY COI", "NIFTY"),
+    ("2. NIFTY BANK COI", "BANKNIFTY"),
+]:
+    st.subheader(title)
 
-        hist_date = choose_display_date(
-            symbol,
-            now
-        )
+    hist_date = choose_display_date(symbol, now)
+    hist = load_intraday_history(symbol, hist_date) if hist_date else pd.DataFrame()
 
-        hist = (
-            load_intraday_history(
-                symbol,
-                hist_date
+    fig = go.Figure()
+
+    if not hist.empty:
+
+        # ----------------------------------------------------
+        # Primary Y-axis: Cumulative COI
+        # ----------------------------------------------------
+        fig.add_trace(
+            go.Scatter(
+                x=hist["timestamp"],
+                y=hist["cumulative_coi"],
+                mode="lines+markers",
+                name="Cumulative COI",
+                yaxis="y",
             )
-            if hist_date
-            else pd.DataFrame()
         )
 
-        fig = go.Figure()
+        # ----------------------------------------------------
+        # Secondary Y-axis: CE / PE Open Interest
+        # ----------------------------------------------------
+        if symbol == "NIFTY":
+            ce_col = "CE_OI"
+            pe_col = "PE_OI"
+            ce_name = "NIFTY CE OI"
+            pe_name = "NIFTY PE OI"
+        else:
+            ce_col = "CE_OI"
+            pe_col = "PE_OI"
+            ce_name = "NIFTY BANK CE OI"
+            pe_name = "NIFTY BANK PE OI"
 
-        if not hist.empty:
-
+        # CE OI
+        if ce_col in hist.columns:
             fig.add_trace(
                 go.Scatter(
                     x=hist["timestamp"],
-                    y=hist["cumulative_coi"],
+                    y=hist[ce_col],
                     mode="lines+markers",
-                    name="COI",
+                    name=ce_name,
+                    yaxis="y2",
                 )
             )
 
-        else:
-
-            fig.add_annotation(
-                text="No intraday COI history available.",
-                x=.5,
-                y=.5,
-                xref="paper",
-                yref="paper",
-                showarrow=False
+        # PE OI
+        if pe_col in hist.columns:
+            fig.add_trace(
+                go.Scatter(
+                    x=hist["timestamp"],
+                    y=hist[pe_col],
+                    mode="lines+markers",
+                    name=pe_name,
+                    yaxis="y2",
+                )
             )
 
-        fig.update_layout(
-            height=400,
-            xaxis_title="Time",
-            yaxis_title="Cumulative COI",
-            hovermode="x unified"
+    else:
+        fig.add_annotation(
+            text="No intraday COI history available.",
+            x=.5,
+            y=.5,
+            xref="paper",
+            yref="paper",
+            showarrow=False,
         )
 
-        st.plotly_chart(
-            fig,
-            use_container_width=True,
-            key=f"coi_chart_{symbol}"
-        )
+    # --------------------------------------------------------
+    # Layout with secondary Y-axis
+    # --------------------------------------------------------
+    fig.update_layout(
+        height=400,
+        xaxis=dict(
+            title="Time",
+        ),
+        yaxis=dict(
+            title="Cumulative COI",
+            side="left",
+        ),
+        yaxis2=dict(
+            title="Open Interest",
+            overlaying="y",
+            side="right",
+            showgrid=False,
+        ),
+        hovermode="x unified",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="left",
+            x=0,
+        ),
+    )
 
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        key=f"coi_chart_{symbol}",
+    )
+    
     # ---------------------------------------------------------
     # 3. Overall Open Interest
     # ---------------------------------------------------------
