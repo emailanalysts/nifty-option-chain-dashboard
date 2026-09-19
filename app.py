@@ -161,11 +161,8 @@ def render_dashboard_title(now, nifty_date, bank_date):
 
     today = now.date().isoformat()
 
-    # Green only when:
-    # 1. Market is currently open
-    # 2. NIFTY has today's data
-    # 3. BANKNIFTY has today's data
-
+    # Green = today's live data
+    # Red = previous/latest completed trading day
     live = (
         market_hours(now)
         and nifty_date == today
@@ -173,43 +170,9 @@ def render_dashboard_title(now, nifty_date, bank_date):
     )
 
     if live:
-        dot_color = "#00C853"
+        st.title("🟢 NSE Option Chain Dashboard")
     else:
-        dot_color = "#FF1744"
-
-    st.markdown(
-        f"""
-        <div style="
-            display:flex;
-            align-items:center;
-            margin-top:5px;
-            margin-bottom:10px;
-        ">
-
-            <span style="
-                display:inline-block;
-                width:13px;
-                height:13px;
-                min-width:13px;
-                border-radius:50%;
-                background-color:{dot_color};
-                margin-right:10px;
-                box-shadow:0 0 6px {dot_color};
-            "></span>
-
-            <span style="
-                font-size:34px;
-                font-weight:700;
-                line-height:1.2;
-            ">
-                NSE Option Chain Dashboard
-            </span>
-
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
+        st.title("🔴 NSE Option Chain Dashboard")
 
 # ============================================================
 # MAIN DASHBOARD
