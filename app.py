@@ -14,6 +14,7 @@ from calculations import (
     latest_saved_trading_date,
     previous_saved_trading_date,
     load_latest_snapshot_on_or_before,
+    load_nifty_futures_history,
 )
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -725,7 +726,104 @@ def render_dashboard():
                 use_container_width=True,
                 key=chart_key
             )
-
+    # =========================================================
+    # 8. NIFTY FUTURES — PRICE + VWAP
+    # =========================================================
+    
+    st.subheader("8. NIFTY Futures — Price & VWAP")
+    
+    futures_date = choose_display_date(
+        "NIFTY",
+        now
+    )
+    
+    futures_hist = (
+        load_nifty_futures_history(
+            futures_date
+        )
+        if futures_date
+        else pd.DataFrame()
+    )
+    
+    fig = go.Figure()
+    
+    if not futures_hist.empty:
+    
+        # -----------------------------------------------------
+        # NIFTY FUTURES PRICE
+        # -----------------------------------------------------
+    
+        fig.add_trace(
+            go.Scatter(
+                x=futures_hist["timestamp"],
+                y=futures_hist["price"],
+                mode="lines",
+                name="NIFTY Futures",
+                line=dict(
+                    color="blue",
+                    width=2
+                ),
+            )
+        )
+    
+        # -----------------------------------------------------
+        # VWAP
+        # -----------------------------------------------------
+    
+        fig.add_trace(
+            go.Scatter(
+                x=futures_hist["timestamp"],
+                y=futures_hist["vwap"],
+                mode="lines",
+                name="VWAP",
+                line=dict(
+                    color="orange",
+                    width=2
+                ),
+            )
+        )
+    
+    else:
+    
+        fig.add_annotation(
+            text="No NIFTY futures data available.",
+            x=0.5,
+            y=0.5,
+            xref="paper",
+            yref="paper",
+            showarrow=False,
+        )
+    
+    
+    fig.update_layout(
+    
+        height=450,
+    
+        xaxis=dict(
+            title="Time",
+        ),
+    
+        yaxis=dict(
+            title="NIFTY Futures Price",
+        ),
+    
+        hovermode="x unified",
+    
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="left",
+            x=0,
+        ),
+    
+    )
+    
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        key="nifty_futures_vwap_chart",
+    )
     # =========================================================
     # ARCHITECTURE
     # =========================================================
