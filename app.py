@@ -431,12 +431,12 @@ def render_dashboard():
                 pe_name = "NIFTY BANK PE OI"
 
             # CE OI
-            if "CE_OI" in hist.columns:
+            if "ce_oi" in hist.columns:
 
                 fig.add_trace(
                     go.Scatter(
                         x=hist["timestamp"],
-                        y=hist["CE_OI"],
+                        y=hist["ce_oi"],
                         mode="lines+markers",
                         name=ce_name,
                         yaxis="y2",
@@ -444,12 +444,12 @@ def render_dashboard():
                 )
 
             # PE OI
-            if "PE_OI" in hist.columns:
+            if "pe_oi" in hist.columns:
 
                 fig.add_trace(
                     go.Scatter(
                         x=hist["timestamp"],
-                        y=hist["PE_OI"],
+                        y=hist["pe_oi"],
                         mode="lines+markers",
                         name=pe_name,
                         yaxis="y2",
