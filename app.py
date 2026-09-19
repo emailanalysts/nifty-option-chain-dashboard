@@ -195,9 +195,7 @@ def render_dashboard():
 
 col1, col2 = st.columns(2)
 
-for col, title, data, chart_key in [
-    (col1, "6. NIFTY Max Pain", nifty, "max_pain_chart_nifty"),
-    (col2, "7. NIFTY Bank Max Pain", bank, "max_pain_chart_banknifty"),
+for col, title, data, chart_key in [(col1, "6. NIFTY Max Pain", nifty, "max_pain_chart_nifty"), (col2, "7. NIFTY Bank Max Pain", bank, "max_pain_chart_banknifty"),
 ]:
     with col:
         st.subheader(title)
@@ -207,11 +205,10 @@ for col, title, data, chart_key in [
         pain = pain.iloc[max(0, idx - 15):min(len(pain), idx + 16)]
         fig = go.Figure()
         fig.add_trace(go.Bar(x=pain.strikePrice, y=pain.totalPain, name="Total Pain"))
-        fig.add_vline(x=mp, line_dash="dash", line_color="red",
-                      annotation_text=f"Max Pain: {mp}", annotation_font_color="red")
+        fig.add_vline(x=mp, line_dash="dash", line_color="red", annotation_text=f"Max Pain: {mp}", annotation_font_color="red")
         fig.update_layout(height=450, xaxis_title="Strike Price", yaxis_title="Total Pain")
         st.plotly_chart(fig, use_container_width=True, key=chart_key)
-
+    
     st.caption(
         "Architecture: NSE → Supabase Cron → Edge Function → Supabase → Streamlit. "
         "The Streamlit dashboard never fetches NSE or writes snapshots."
