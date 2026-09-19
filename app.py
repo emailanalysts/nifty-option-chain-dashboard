@@ -647,7 +647,7 @@ def render_dashboard():
 
     fig.update_layout(
         barmode="group",
-        height=450,
+        height=350,
         yaxis_title="Open Interest",
         hovermode="x unified"
     )
