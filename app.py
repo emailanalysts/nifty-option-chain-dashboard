@@ -727,7 +727,7 @@ def render_dashboard():
 
             fig.update_layout(
                 barmode="group",
-                height=500,
+                height=350,
                 xaxis_title="Strike Price",
                 yaxis_title="Open Interest",
                 hovermode="x unified",
@@ -812,7 +812,7 @@ def render_dashboard():
             )
 
             fig.update_layout(
-                height=450,
+                height=350,
                 xaxis_title="Strike Price",
                 yaxis_title="Total Pain",
                 hovermode="x unified",
