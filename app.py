@@ -14,17 +14,19 @@ from calculations import (
     latest_saved_trading_date,
     previous_saved_trading_date,
     load_latest_snapshot_on_or_before,
-    database_status,
 )
 
 IST = ZoneInfo("Asia/Kolkata")
+
 MARKET_OPEN = dt_time(9, 15)
 MARKET_CLOSE = dt_time(15, 30)
+
 
 st.set_page_config(
     page_title="NSE Option Chain Dashboard",
     layout="wide"
 )
+
 
 st.markdown("""
 <style>
@@ -83,32 +85,6 @@ def market_hours(now):
 
 
 # ============================================================
-# DATABASE STATUS
-# ============================================================
-
-def render_database_status():
-
-    status = database_status()
-
-    if status["connected"]:
-
-        latest = status["latest"] or "No snapshots yet"
-
-        st.success(
-            f"🟢 Database Status: Connected to Supabase • "
-            f"{status['count']:,} snapshots • Latest: {latest}",
-            icon=None,
-        )
-
-    else:
-
-        st.error(
-            f"🔴 Database Status: NOT CONNECTED • "
-            f"{status['error']}"
-        )
-
-
-# ============================================================
 # DISPLAY DATE
 # ============================================================
 
@@ -130,13 +106,19 @@ def choose_display_date(symbol, now):
 
 def load_display_data(symbol, now):
 
-    target = choose_display_date(symbol, now)
+    target = choose_display_date(
+        symbol,
+        now
+    )
 
     if not target:
         return pd.DataFrame(), None
 
     return (
-        load_latest_snapshot_on_or_before(symbol, target),
+        load_latest_snapshot_on_or_before(
+            symbol,
+            target
+        ),
         target
     )
 
@@ -147,12 +129,18 @@ def load_display_data(symbol, now):
 
 def snapshot_age_minutes(symbol, now):
 
-    target = choose_display_date(symbol, now)
+    target = choose_display_date(
+        symbol,
+        now
+    )
 
     if not target:
         return None
 
-    hist = load_intraday_history(symbol, target)
+    hist = load_intraday_history(
+        symbol,
+        target
+    )
 
     if hist.empty:
         return None
@@ -166,19 +154,86 @@ def snapshot_age_minutes(symbol, now):
 
 
 # ============================================================
+# DASHBOARD TITLE
+# ============================================================
+
+def render_dashboard_title(
+    now,
+    nifty_date,
+    bank_date
+):
+
+    today = now.date().isoformat()
+
+    # --------------------------------------------------------
+    # LIVE only when:
+    #
+    # 1. Market is currently open
+    # 2. NIFTY has today's data
+    # 3. BANKNIFTY has today's data
+    #
+    # Otherwise dashboard is showing the latest completed
+    # trading-day data.
+    # --------------------------------------------------------
+
+    live_data = (
+        market_hours(now)
+        and nifty_date == today
+        and bank_date == today
+    )
+
+    if live_data:
+        dot_color = "#00C853"   # Green
+    else:
+        dot_color = "#FF1744"   # Red
+
+    # --------------------------------------------------------
+    # Title + status dot
+    # --------------------------------------------------------
+
+    st.markdown(
+        f"""
+        <div style="
+            display:flex;
+            align-items:center;
+            gap:10px;
+            margin-top:4px;
+            margin-bottom:8px;
+        ">
+
+            <span style="
+                width:14px;
+                height:14px;
+                min-width:14px;
+                background:{dot_color};
+                border-radius:50%;
+                display:inline-block;
+                box-shadow:0 0 7px {dot_color};
+            "></span>
+
+            <h1 style="
+                margin:0;
+                padding:0;
+                font-size:34px;
+                font-weight:700;
+                line-height:1.2;
+            ">
+                NSE Option Chain Dashboard
+            </h1>
+
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ============================================================
 # MAIN DASHBOARD
 # ============================================================
 
 def render_dashboard():
 
-    # ---------------------------------------------------------
-    # Database status
-    # ---------------------------------------------------------
-
-    render_database_status()
-
     now = ist_now()
-    live = market_hours(now)
 
     # ---------------------------------------------------------
     # Load current / last available data
@@ -194,7 +249,47 @@ def render_dashboard():
         now
     )
 
+    # ---------------------------------------------------------
+    # No data available
+    # ---------------------------------------------------------
+
     if nifty.empty or bank.empty:
+
+        # If there is no data yet, show red status.
+        st.markdown(
+            """
+            <div style="
+                display:flex;
+                align-items:center;
+                gap:10px;
+                margin-top:4px;
+                margin-bottom:8px;
+            ">
+
+                <span style="
+                    width:14px;
+                    height:14px;
+                    min-width:14px;
+                    background:#FF1744;
+                    border-radius:50%;
+                    display:inline-block;
+                    box-shadow:0 0 7px #FF1744;
+                "></span>
+
+                <h1 style="
+                    margin:0;
+                    padding:0;
+                    font-size:34px;
+                    font-weight:700;
+                    line-height:1.2;
+                ">
+                    NSE Option Chain Dashboard
+                </h1>
+
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
         st.warning(
             "No option-chain snapshot is available in Supabase yet."
@@ -207,33 +302,18 @@ def render_dashboard():
 
         return
 
-    data_date = nifty_date or bank_date
-
-    if live and data_date == now.date().isoformat():
-
-        mode = "LIVE • Supabase collector"
-
-    else:
-
-        mode = (
-            "PREVIOUS COMPLETED TRADING DAY • "
-            "Market closed / awaiting first snapshot"
-        )
-
     # ---------------------------------------------------------
-    # Title + Refresh
+    # Title
     # ---------------------------------------------------------
 
     col_title, col_refresh = st.columns([8, 1])
 
     with col_title:
 
-        st.title("NSE Option Chain Dashboard")
-
-        st.caption(
-            f"{mode} • IST {now.strftime('%d-%b-%Y %H:%M:%S')} • "
-            "Collector: Supabase Cron every 3 minutes • "
-            "Dashboard: read-only"
+        render_dashboard_title(
+            now,
+            nifty_date,
+            bank_date
         )
 
     with col_refresh:
@@ -249,6 +329,12 @@ def render_dashboard():
     # ---------------------------------------------------------
     # Collector freshness
     # ---------------------------------------------------------
+
+    live = (
+        market_hours(now)
+        and nifty_date == now.date().isoformat()
+        and bank_date == now.date().isoformat()
+    )
 
     if live:
 
@@ -277,13 +363,6 @@ def render_dashboard():
                     f"{age:.1f} minutes old. "
                     "The chart is showing the last stored snapshot; "
                     "no values are being fabricated."
-                )
-
-            else:
-
-                st.success(
-                    "✅ Collector is updating Supabase normally.",
-                    icon=None,
                 )
 
     # =========================================================
@@ -430,28 +509,39 @@ def render_dashboard():
                 ce_name = "NIFTY BANK CE OI"
                 pe_name = "NIFTY BANK PE OI"
 
-            # CE OI
+            # CE OI — RED
             if "ce_oi" in hist.columns:
 
-                fig.add_trace(go.Scatter(
-                    x=hist["timestamp"],
-                    y=hist["ce_oi"],
-                    mode="lines",
-                    name=ce_name,
-                    yaxis="y2",
-                    line=dict(color="red", width=2),
-                ))
-            # PE OI
+                fig.add_trace(
+                    go.Scatter(
+                        x=hist["timestamp"],
+                        y=hist["ce_oi"],
+                        mode="lines",
+                        name=ce_name,
+                        yaxis="y2",
+                        line=dict(
+                            color="red",
+                            width=2
+                        ),
+                    )
+                )
+
+            # PE OI — GREEN
             if "pe_oi" in hist.columns:
 
-                fig.add_trace(go.Scatter(
-                    x=hist["timestamp"],
-                    y=hist["pe_oi"],
-                    mode="lines",
-                    name=pe_name,
-                    yaxis="y2",
-                    line=dict(color="green", width=2),
-                ))
+                fig.add_trace(
+                    go.Scatter(
+                        x=hist["timestamp"],
+                        y=hist["pe_oi"],
+                        mode="lines",
+                        name=pe_name,
+                        yaxis="y2",
+                        line=dict(
+                            color="green",
+                            width=2
+                        ),
+                    )
+                )
 
         else:
 
@@ -476,13 +566,11 @@ def render_dashboard():
                 title="Time",
             ),
 
-            # LEFT AXIS
             yaxis=dict(
                 title="Cumulative COI",
                 side="left",
             ),
 
-            # RIGHT AXIS
             yaxis2=dict(
                 title="Open Interest",
                 overlaying="y",
