@@ -439,7 +439,7 @@ def render_dashboard():
                     mode="lines",
                     name=ce_name,
                     yaxis="y2",
-                    line=dict(width=2),
+                    line=dict(color="red", width=2),
                 ))
             # PE OI
             if "pe_oi" in hist.columns:
@@ -450,7 +450,7 @@ def render_dashboard():
                     mode="lines",
                     name=pe_name,
                     yaxis="y2",
-                    line=dict(width=2),
+                    line=dict(color="green", width=2),
                 ))
 
         else:
