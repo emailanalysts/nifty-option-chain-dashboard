@@ -726,11 +726,11 @@ def render_dashboard():
     # ARCHITECTURE
     # =========================================================
 
-    st.caption(
-        # "Architecture: NSE → Supabase Cron → Edge Function → "
-        # "Supabase → Streamlit. "
-        # "The Streamlit dashboard never fetches NSE or writes snapshots."
-    )
+    # st.caption(
+    #     "Architecture: NSE → Supabase Cron → Edge Function → "
+    #     "Supabase → Streamlit. "
+    #     "The Streamlit dashboard never fetches NSE or writes snapshots."
+    # )
 
 
 # ============================================================
