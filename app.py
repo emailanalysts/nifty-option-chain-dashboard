@@ -51,7 +51,8 @@ def render_database_status():
     if status["connected"]:
         latest = status["latest"] or "No snapshots yet"
         st.success(
-            f"🟢 Database Status: Connected to Supabase • {status['count']:,} snapshots • Latest: {latest}",
+            # Database Status: Connected to Supabase • {status['count']:,} snapshots • 
+            f"🟢 Latest: {latest}",
             icon=None,
         )
     else:
@@ -101,14 +102,14 @@ def render_dashboard():
     if live and data_date == now.date().isoformat():
         mode = "LIVE • Supabase collector"
     else:
-        mode = "PREVIOUS COMPLETED TRADING DAY • Market closed / awaiting first snapshot"
-
+        mode = ""
+# PREVIOUS COMPLETED TRADING DAY • Market closed / awaiting first snapshot
     col_title, col_refresh = st.columns([8, 1])
     with col_title:
         st.title("NSE Option Chain Dashboard")
         st.caption(
             f"{mode} • IST {now.strftime('%d-%b-%Y %H:%M:%S')} • "
-            "Collector: Supabase Cron every 3 minutes • Dashboard: read-only"
+            # "Collector: Supabase Cron every 3 minutes • Dashboard: read-only"
         )
     with col_refresh:
         if st.button("🔄 Refresh", use_container_width=True):
@@ -193,7 +194,13 @@ def render_dashboard():
                           yaxis_title="Open Interest", hovermode="x unified")
         st.plotly_chart(fig, use_container_width=True, key=f"strike_oi_chart_{title}")
 
-    for title, data in [("6. NIFTY Max Pain", nifty), ("7. NIFTY Bank Max Pain", bank)]:
+col1, col2 = st.columns(2)
+
+for col, title, data, chart_key in [
+    (col1, "6. NIFTY Max Pain", nifty, "max_pain_chart_nifty"),
+    (col2, "7. NIFTY Bank Max Pain", bank, "max_pain_chart_banknifty"),
+]:
+    with col:
         st.subheader(title)
         mp, pain = max_pain(data, True)
         pain = pain.sort_values("strikePrice").reset_index(drop=True)
@@ -204,11 +211,11 @@ def render_dashboard():
         fig.add_vline(x=mp, line_dash="dash", line_color="red",
                       annotation_text=f"Max Pain: {mp}", annotation_font_color="red")
         fig.update_layout(height=450, xaxis_title="Strike Price", yaxis_title="Total Pain")
-        st.plotly_chart(fig, use_container_width=True, key=f"max_pain_chart_{title}")
+        st.plotly_chart(fig, use_container_width=True, key=chart_key)
 
     st.caption(
-        "Architecture: NSE → Supabase Cron → Edge Function → Supabase → Streamlit. "
-        "The Streamlit dashboard never fetches NSE or writes snapshots."
+        # "Architecture: NSE → Supabase Cron → Edge Function → Supabase → Streamlit. "
+        # "The Streamlit dashboard never fetches NSE or writes snapshots."
     )
 
 
