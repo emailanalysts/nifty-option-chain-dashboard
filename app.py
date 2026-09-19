@@ -436,7 +436,7 @@ def render_dashboard():
                 fig.add_trace(go.Scatter(
                     x=hist["timestamp"],
                     y=hist["ce_oi"],
-                    mode="lines+markers",
+                    mode="lines",
                     name=ce_name,
                     yaxis="y2",
                     line=dict(width=2),
@@ -447,7 +447,7 @@ def render_dashboard():
                 fig.add_trace(go.Scatter(
                     x=hist["timestamp"],
                     y=hist["pe_oi"],
-                    mode="lines+markers",
+                    mode="lines",
                     name=pe_name,
                     yaxis="y2",
                     line=dict(width=2),
