@@ -199,66 +199,26 @@ def render_dashboard():
     # ---------------------------------------------------------
     # Title + Refresh
     # ---------------------------------------------------------
-
+    
     col_title, col_refresh = st.columns([8, 1])
-
+    
     with col_title:
-
-        if nifty.empty or bank.empty:
-
-            # No data yet = RED status
-
-            st.markdown(
-                """
-                <div style="
-                    display:flex;
-                    align-items:center;
-                    margin-top:5px;
-                    margin-bottom:10px;
-                ">
-
-                    <span style="
-                        display:inline-block;
-                        width:13px;
-                        height:13px;
-                        min-width:13px;
-                        border-radius:50%;
-                        background-color:#FF1744;
-                        margin-right:10px;
-                        box-shadow:0 0 6px #FF1744;
-                    "></span>
-
-                    <span style="
-                        font-size:34px;
-                        font-weight:700;
-                        line-height:1.2;
-                    ">
-                        NSE Option Chain Dashboard
-                    </span>
-
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        else:
-
-            render_dashboard_title(
-                now,
-                nifty_date,
-                bank_date
-            )
-
+    
+        render_dashboard_title(
+            now,
+            nifty_date,
+            bank_date
+        )
+    
     with col_refresh:
-
+    
         if st.button(
             "🔄 Refresh",
             use_container_width=True
         ):
-
+    
             st.cache_data.clear()
             st.rerun()
-
     # ---------------------------------------------------------
     # No data available
     # ---------------------------------------------------------
