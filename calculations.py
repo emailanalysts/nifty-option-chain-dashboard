@@ -96,21 +96,108 @@ def _read_df(sql, params):
 
 
 def load_intraday_history(symbol, trading_date=None):
-    date_value = pd.Timestamp(trading_date).date() if trading_date else datetime.now(IST).date()
+    date_value = (
+        pd.Timestamp(trading_date).date()
+        if trading_date
+        else datetime.now(IST).date()
+    )
+
     df = _read_df(
         """
-        SELECT snapshot_time AS timestamp, symbol, expiry_date AS expiry,
-               spot, cumulative_coi
+        SELECT
+            snapshot_time AS timestamp,
+            symbol,
+            expiry_date AS expiry,
+            spot,
+            cumulative_coi,
+            chain_data
         FROM option_chain_snapshots
-        WHERE symbol=%s AND trading_date=%s
+        WHERE symbol=%s
+          AND trading_date=%s
         ORDER BY snapshot_time
         """,
         (symbol, date_value),
     )
-    if not df.empty:
-        df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert(IST)
-    return df
 
+    if df.empty:
+        return df
+
+    # --------------------------------------------------------
+    # Convert timestamp to IST
+    # --------------------------------------------------------
+    df["timestamp"] = (
+        pd.to_datetime(df["timestamp"], utc=True)
+        .dt.tz_convert(IST)
+    )
+
+    # --------------------------------------------------------
+    # Calculate total CE OI and PE OI from chain_data
+    # for every snapshot
+    # --------------------------------------------------------
+    ce_oi_values = []
+    pe_oi_values = []
+
+    for chain_data in df["chain_data"]:
+
+        # chain_data is normally a list of option records
+        records = chain_data or []
+
+        # Safety handling in case JSON is wrapped in a dictionary
+        if isinstance(records, dict):
+
+            if isinstance(records.get("data"), list):
+                records = records["data"]
+
+            elif isinstance(records.get("records"), dict):
+                records = records["records"].get("data", [])
+
+            elif isinstance(records.get("filtered"), dict):
+                records = records["filtered"].get("data", [])
+
+            else:
+                records = []
+
+        ce_total = 0.0
+        pe_total = 0.0
+
+        for row in records:
+
+            if not isinstance(row, dict):
+                continue
+
+            ce_value = row.get("CE_OI", 0)
+            pe_value = row.get("PE_OI", 0)
+
+            try:
+                ce_total += float(ce_value or 0)
+            except (TypeError, ValueError):
+                pass
+
+            try:
+                pe_total += float(pe_value or 0)
+            except (TypeError, ValueError):
+                pass
+
+        ce_oi_values.append(ce_total)
+        pe_oi_values.append(pe_total)
+
+    df["ce_oi"] = ce_oi_values
+    df["pe_oi"] = pe_oi_values
+
+    # --------------------------------------------------------
+    # Return only the fields required by the dashboard
+    # --------------------------------------------------------
+    return df[
+        [
+            "timestamp",
+            "symbol",
+            "expiry",
+            "spot",
+            "cumulative_coi",
+            "ce_oi",
+            "pe_oi",
+        ]
+    ]
 
 def latest_saved_trading_date(symbol):
     with _connect() as con:
