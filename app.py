@@ -51,8 +51,7 @@ def render_database_status():
     if status["connected"]:
         latest = status["latest"] or "No snapshots yet"
         st.success(
-            # Database Status: Connected to Supabase • {status['count']:,} snapshots • 
-            f"🟢 Latest: {latest}",
+            f"🟢 Database Status: Connected to Supabase • {status['count']:,} snapshots • Latest: {latest}",
             icon=None,
         )
     else:
@@ -102,8 +101,8 @@ def render_dashboard():
     if live and data_date == now.date().isoformat():
         mode = "LIVE • Supabase collector"
     else:
-        mode = ""
-# PREVIOUS COMPLETED TRADING DAY • Market closed / awaiting first snapshot
+        mode = "PREVIOUS COMPLETED TRADING DAY • Market closed / awaiting first snapshot"
+
     col_title, col_refresh = st.columns([8, 1])
     with col_title:
         st.title("NSE Option Chain Dashboard")
