@@ -727,9 +727,9 @@ def render_dashboard():
     # =========================================================
 
     st.caption(
-        "Architecture: NSE → Supabase Cron → Edge Function → "
-        "Supabase → Streamlit. "
-        "The Streamlit dashboard never fetches NSE or writes snapshots."
+        # "Architecture: NSE → Supabase Cron → Edge Function → "
+        # "Supabase → Streamlit. "
+        # "The Streamlit dashboard never fetches NSE or writes snapshots."
     )
 
 
