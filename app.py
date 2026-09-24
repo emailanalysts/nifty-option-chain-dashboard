@@ -16,6 +16,7 @@ from calculations import (
     load_latest_snapshot_on_or_before,
     load_nifty_futures_history,
     load_buddy_dashboard_history,
+    authenticate_dashboard_user,
 )
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -852,9 +853,41 @@ def render_dashboard():
 # AUTO REFRESH
 # ============================================================
 
+def login_screen():
+    st.title("🔐 Dashboard Login")
+    st.write("Please enter your username and password.")
+
+    username = st.text_input("Username")
+    password = st.text_input(
+        "Password",
+        type="password"
+    )
+
+    if st.button("Login", type="primary"):
+        user = authenticate_dashboard_user(
+            username,
+            password
+        )
+
+        if user:
+            st.session_state["authenticated"] = True
+            st.session_state["dashboard_user"] = user
+            st.rerun()
+        else:
+            st.error("Invalid username or password.")
+
+
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+
+if not st.session_state["authenticated"]:
+    login_screen()
+    st.stop()
+
+
 @st.fragment(run_every="3m")
 def auto_refresh_dashboard():
-
     render_dashboard()
 
 
