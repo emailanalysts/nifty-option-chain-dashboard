@@ -4,6 +4,11 @@ import streamlit as st
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import hashlib
+import hmac
+import secrets
+import uuid
+
 IST = ZoneInfo("Asia/Kolkata")
 
 
@@ -337,3 +342,164 @@ def load_nifty_futures_history(trading_date=None):
         )
 
     return df
+
+# ============================================================
+# DASHBOARD AUTHENTICATION
+# ============================================================
+
+AUTH_ITERATIONS = 310_000
+
+
+def create_password_hash(password: str) -> str:
+    """
+    Create a salted PBKDF2-SHA256 password hash.
+
+    Stored format:
+        pbkdf2_sha256$iterations$salt$hash
+    """
+
+    if not password:
+        raise ValueError("Password cannot be empty.")
+
+    salt = secrets.token_hex(16)
+
+    derived_key = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt.encode("utf-8"),
+        AUTH_ITERATIONS,
+    )
+
+    password_hash = derived_key.hex()
+
+    return (
+        f"pbkdf2_sha256"
+        f"${AUTH_ITERATIONS}"
+        f"${salt}"
+        f"${password_hash}"
+    )
+
+
+def verify_password(
+    password: str,
+    stored_hash: str
+) -> bool:
+
+    try:
+
+        algorithm, iterations, salt, expected_hash = (
+            stored_hash.split("$")
+        )
+
+        if algorithm != "pbkdf2_sha256":
+            return False
+
+        iterations = int(iterations)
+
+        derived_key = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            salt.encode("utf-8"),
+            iterations,
+        )
+
+        actual_hash = derived_key.hex()
+
+        return hmac.compare_digest(
+            actual_hash,
+            expected_hash
+        )
+
+    except Exception:
+        return False
+
+
+def authenticate_dashboard_user(
+    username: str,
+    password: str
+):
+
+    username = username.strip()
+
+    if not username or not password:
+        return None
+
+    with _connect() as con:
+
+        with con.cursor() as cur:
+
+            cur.execute(
+                """
+                SELECT
+                    username,
+                    display_name,
+                    password_hash,
+                    active
+                FROM dashboard_users
+                WHERE LOWER(username) = LOWER(%s)
+                LIMIT 1
+                """,
+                (username,)
+            )
+
+            row = cur.fetchone()
+
+            if not row:
+                return None
+
+            db_username = row[0]
+            display_name = row[1]
+            password_hash = row[2]
+            active = row[3]
+
+            if not active:
+                return None
+
+            if not verify_password(
+                password,
+                password_hash
+            ):
+                return None
+
+            cur.execute(
+                """
+                UPDATE dashboard_users
+                SET
+                    last_login_at = NOW(),
+                    login_count = login_count + 1
+                WHERE username = %s
+                """,
+                (db_username,)
+            )
+
+            session_id = str(uuid.uuid4())
+
+            cur.execute(
+                """
+                INSERT INTO dashboard_login_events
+                (
+                    username,
+                    event_type,
+                    session_id
+                )
+                VALUES
+                (
+                    %s,
+                    %s,
+                    %s
+                )
+                """,
+                (
+                    db_username,
+                    "LOGIN",
+                    session_id,
+                )
+            )
+
+            con.commit()
+
+            return {
+                "username": db_username,
+                "display_name": display_name or db_username,
+                "session_id": session_id,
+            }
