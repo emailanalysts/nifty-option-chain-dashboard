@@ -538,5 +538,3 @@ def load_dashboard_login_events(limit=100):
             con,
             params=(limit,),
         )
-
-# Dashboard authentication activity functions
