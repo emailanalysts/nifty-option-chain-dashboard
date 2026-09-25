@@ -936,6 +936,54 @@ with st.form("create_dashboard_user_form"):
 
         users_df = load_dashboard_users()
 
+        if not users_df.empty:
+
+    st.subheader("Manage Users")
+
+    for _, row in users_df.iterrows():
+
+        username = row["username"]
+        is_active = bool(row["active"])
+
+        col1, col2, col3 = st.columns([3, 2, 1])
+
+        with col1:
+            st.write(
+                f"**{username}**"
+            )
+
+        with col2:
+            status = "🟢 Active" if is_active else "🔴 Inactive"
+            st.write(status)
+
+        with col3:
+
+            if username.lower() == "admin":
+                st.caption("Admin")
+            else:
+
+                button_text = (
+                    "Deactivate"
+                    if is_active
+                    else "Activate"
+                )
+
+                if st.button(
+                    button_text,
+                    key=f"toggle_user_{username}"
+                ):
+
+                    success, message = set_dashboard_user_active(
+                        username,
+                        not is_active
+                    )
+
+                    if success:
+                        st.success(message)
+                        st.rerun()
+                    else:
+                        st.error(message)
+
         if users_df.empty:
             st.info("No dashboard users found.")
         else:
