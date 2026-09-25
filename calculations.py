@@ -503,3 +503,37 @@ def authenticate_dashboard_user(
                 "display_name": display_name or db_username,
                 "session_id": session_id,
             }
+def load_dashboard_users():
+    with _connect() as con:
+        return pd.read_sql_query(
+            """
+            SELECT
+                username,
+                display_name,
+                active,
+                login_count,
+                last_login_at,
+                created_at
+            FROM dashboard_users
+            ORDER BY created_at DESC
+            """,
+            con,
+        )
+
+
+def load_dashboard_login_events(limit=100):
+    with _connect() as con:
+        return pd.read_sql_query(
+            """
+            SELECT
+                username,
+                event_type,
+                event_time,
+                session_id
+            FROM dashboard_login_events
+            ORDER BY event_time DESC
+            LIMIT %s
+            """,
+            con,
+            params=(limit,),
+        )
