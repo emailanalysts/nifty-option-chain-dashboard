@@ -538,3 +538,52 @@ def load_dashboard_login_events(limit=100):
             con,
             params=(limit,),
         )
+
+def create_dashboard_user(username, display_name, password):
+    username = username.strip()
+    display_name = display_name.strip()
+
+    if not username:
+        return False, "Username is required."
+
+    if not password:
+        return False, "Password is required."
+
+    password_hash = create_password_hash(password)
+
+    try:
+        with _connect() as con:
+            with con.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO dashboard_users
+                    (
+                        username,
+                        display_name,
+                        password_hash
+                    )
+                    VALUES
+                    (
+                        %s,
+                        %s,
+                        %s
+                    )
+                    """,
+                    (
+                        username,
+                        display_name or username,
+                        password_hash,
+                    ),
+                )
+
+            con.commit()
+
+        return True, "User created successfully."
+
+    except Exception as e:
+        error_text = str(e)
+
+        if "duplicate key" in error_text.lower():
+            return False, "Username already exists."
+
+        return False, "Unable to create user."
