@@ -587,3 +587,39 @@ def create_dashboard_user(username, display_name, password):
             return False, "Username already exists."
 
         return False, "Unable to create user."
+
+def set_dashboard_user_active(username, active):
+    username = username.strip()
+
+    if not username:
+        return False, "Username is required."
+
+    # Prevent accidental deactivation of the admin account
+    if username.lower() == "admin":
+        return False, "The admin account cannot be deactivated."
+
+    try:
+        with _connect() as con:
+            with con.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE dashboard_users
+                    SET active = %s
+                    WHERE username = %s
+                    """,
+                    (active, username),
+                )
+
+                if cur.rowcount == 0:
+                    return False, "User not found."
+
+            con.commit()
+
+        if active:
+            return True, "User activated."
+        else:
+            return True, "User deactivated."
+
+    except Exception:
+        return False, "Unable to update user status."
+
