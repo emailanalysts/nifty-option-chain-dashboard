@@ -896,6 +896,41 @@ if st.session_state.get("dashboard_user", {}).get("username") == "admin":
 
     with st.expander("🔐 Admin — User Activity"):
 
+        st.subheader("➕ Create New User")
+
+with st.form("create_dashboard_user_form"):
+
+    new_username = st.text_input(
+        "Username"
+    )
+
+    new_display_name = st.text_input(
+        "Display Name"
+    )
+
+    new_password = st.text_input(
+        "Password",
+        type="password"
+    )
+
+    create_user_clicked = st.form_submit_button(
+        "Create User"
+    )
+
+    if create_user_clicked:
+
+        success, message = create_dashboard_user(
+            new_username,
+            new_display_name,
+            new_password
+        )
+
+        if success:
+            st.success(message)
+            st.rerun()
+        else:
+            st.error(message)
+
         st.subheader("Dashboard Users")
 
         users_df = load_dashboard_users()
