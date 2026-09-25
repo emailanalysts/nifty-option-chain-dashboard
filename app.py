@@ -897,109 +897,141 @@ if st.session_state.get("dashboard_user", {}).get("username") == "admin":
 
     with st.expander("🔐 Admin — User Activity"):
 
+        # ----------------------------------------------------
+        # CREATE NEW USER
+        # ----------------------------------------------------
+
         st.subheader("➕ Create New User")
 
-with st.form("create_dashboard_user_form"):
+        with st.form("create_dashboard_user_form"):
 
-    new_username = st.text_input(
-        "Username"
-    )
+            new_username = st.text_input(
+                "Username"
+            )
 
-    new_display_name = st.text_input(
-        "Display Name"
-    )
+            new_display_name = st.text_input(
+                "Display Name"
+            )
 
-    new_password = st.text_input(
-        "Password",
-        type="password"
-    )
+            new_password = st.text_input(
+                "Password",
+                type="password"
+            )
 
-    create_user_clicked = st.form_submit_button(
-        "Create User"
-    )
+            create_user_clicked = st.form_submit_button(
+                "Create User"
+            )
 
-    if create_user_clicked:
+            if create_user_clicked:
 
-        success, message = create_dashboard_user(
-            new_username,
-            new_display_name,
-            new_password
-        )
+                success, message = create_dashboard_user(
+                    new_username,
+                    new_display_name,
+                    new_password
+                )
 
-        if success:
-            st.success(message)
-            st.rerun()
-        else:
-            st.error(message)
+                if success:
+                    st.success(message)
+                    st.rerun()
+                else:
+                    st.error(message)
+
+        # ----------------------------------------------------
+        # DASHBOARD USERS
+        # ----------------------------------------------------
 
         st.subheader("Dashboard Users")
 
         users_df = load_dashboard_users()
 
-        if not users_df.empty:
+        if users_df.empty:
+
+            st.info("No dashboard users found.")
+
+        else:
 
             st.subheader("Manage Users")
-        
+
             for _, row in users_df.iterrows():
-        
+
                 username = row["username"]
                 is_active = bool(row["active"])
-        
-                col1, col2, col3 = st.columns([3, 2, 1])
-        
+
+                col1, col2, col3 = st.columns(
+                    [3, 2, 1]
+                )
+
                 with col1:
                     st.write(
                         f"**{username}**"
                     )
-        
+
                 with col2:
-                    status = "🟢 Active" if is_active else "🔴 Inactive"
+
+                    status = (
+                        "🟢 Active"
+                        if is_active
+                        else "🔴 Inactive"
+                    )
+
                     st.write(status)
-        
+
                 with col3:
-        
+
                     if username.lower() == "admin":
+
                         st.caption("Admin")
+
                     else:
-        
+
                         button_text = (
                             "Deactivate"
                             if is_active
                             else "Activate"
                         )
-        
+
                         if st.button(
                             button_text,
                             key=f"toggle_user_{username}"
                         ):
-        
-                            success, message = set_dashboard_user_active(
-                                username,
-                                not is_active
+
+                            success, message = (
+                                set_dashboard_user_active(
+                                    username,
+                                    not is_active
+                                )
                             )
-        
+
                             if success:
                                 st.success(message)
                                 st.rerun()
                             else:
                                 st.error(message)
 
-        if users_df.empty:
-            st.info("No dashboard users found.")
-        else:
             st.dataframe(
                 users_df,
                 use_container_width=True,
                 hide_index=True,
             )
 
+        # ----------------------------------------------------
+        # LOGIN ACTIVITY
+        # ----------------------------------------------------
+
         st.subheader("Recent Login Activity")
 
-        login_df = load_dashboard_login_events(limit=100)
+        login_df = load_dashboard_login_events(
+            limit=100
+        )
 
         if login_df.empty:
-            st.info("No login activity found.")
+
+            st.info(
+                "No login activity found."
+            )
+
         else:
+
             st.dataframe(
                 login_df,
                 use_container_width=True,
