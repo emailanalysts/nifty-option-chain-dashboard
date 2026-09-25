@@ -887,6 +887,40 @@ if not st.session_state["authenticated"]:
     login_screen()
     st.stop()
 
+# ============================================================
+# ADMIN ACTIVITY
+# ============================================================
+
+if st.session_state.get("dashboard_user", {}).get("username") == "admin":
+
+    with st.expander("🔐 Admin — User Activity"):
+
+        st.subheader("Dashboard Users")
+
+        users_df = load_dashboard_users()
+
+        if users_df.empty:
+            st.info("No dashboard users found.")
+        else:
+            st.dataframe(
+                users_df,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        st.subheader("Recent Login Activity")
+
+        login_df = load_dashboard_login_events(limit=100)
+
+        if login_df.empty:
+            st.info("No login activity found.")
+        else:
+            st.dataframe(
+                login_df,
+                use_container_width=True,
+                hide_index=True,
+            )
+
 user = st.session_state.get("dashboard_user")
 
 col1, col2 = st.columns([8, 1])
