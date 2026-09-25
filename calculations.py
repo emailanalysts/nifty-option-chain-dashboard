@@ -503,6 +503,7 @@ def authenticate_dashboard_user(
                 "display_name": display_name or db_username,
                 "session_id": session_id,
             }
+
 def load_dashboard_users():
     with _connect() as con:
         return pd.read_sql_query(
@@ -537,3 +538,5 @@ def load_dashboard_login_events(limit=100):
             con,
             params=(limit,),
         )
+
+# Dashboard authentication activity functions
