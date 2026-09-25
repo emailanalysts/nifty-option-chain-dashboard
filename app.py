@@ -20,6 +20,7 @@ from calculations import (
     load_dashboard_users,
     load_dashboard_login_events,
     create_dashboard_user,
+    set_dashboard_user_active,
 )
 
 IST = ZoneInfo("Asia/Kolkata")
