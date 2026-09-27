@@ -866,22 +866,6 @@ st.write("Has st.user:", hasattr(st, "user"))
 st.write("Has st.experimental_user:", hasattr(st, "experimental_user"))
 
 st.stop()
-    st.title("🔐 NSE Option Dashboard")
-    st.write("Please sign in with your Google account.")
-
-    if st.button("Sign in with Google", type="primary"):
-        st.login()
-
-    st.stop()
-
-# User successfully authenticated with Google
-google_email = st.user.email
-google_name = st.user.name
-
-st.success(f"Logged in as: {google_name} ({google_email})")
-
-if st.button("Logout"):
-    st.logout()
 
 # ============================================================
 # ADMIN ACTIVITY
