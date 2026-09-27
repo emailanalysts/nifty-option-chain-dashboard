@@ -857,37 +857,27 @@ def render_dashboard():
 # AUTO REFRESH
 # ============================================================
 
-def login_screen():
-    st.title("🔐 Dashboard Login")
-    st.write("Please enter your username and password.")
+# ============================================================
+# GOOGLE LOGIN — TEMPORARY TEST
+# ============================================================
 
-    username = st.text_input("Username")
-    password = st.text_input(
-        "Password",
-        type="password"
-    )
+if not st.user.is_logged_in:
+    st.title("🔐 NSE Option Dashboard")
+    st.write("Please sign in with your Google account.")
 
-    if st.button("Login", type="primary"):
-        user = authenticate_dashboard_user(
-            username,
-            password
-        )
+    if st.button("Sign in with Google", type="primary"):
+        st.login()
 
-        if user:
-            st.session_state["authenticated"] = True
-            st.session_state["dashboard_user"] = user
-            st.rerun()
-        else:
-            st.error("Invalid username or password.")
-
-
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
-
-
-if not st.session_state["authenticated"]:
-    login_screen()
     st.stop()
+
+# User successfully authenticated with Google
+google_email = st.user.email
+google_name = st.user.name
+
+st.success(f"Logged in as: {google_name} ({google_email})")
+
+if st.button("Logout"):
+    st.logout()
 
 # ============================================================
 # ADMIN ACTIVITY
