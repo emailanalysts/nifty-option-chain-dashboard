@@ -491,11 +491,16 @@ def authenticate_dashboard_user(
                 "session_id": session_id,
             }
 
-
-def authenticate_google_user(email: str):
+def authenticate_google_user(
+    email: str,
+    display_name: str = None
+):
     """
-    Authenticate a Google/OIDC user against dashboard_users.
-    Returns the dashboard user details if the email is active.
+    Authenticate a Google/OIDC user.
+
+    - Existing active user  -> allow access and record login
+    - Existing inactive user -> deny access
+    - New Google user       -> automatically create as ACTIVE
     """
 
     if not email:
@@ -503,37 +508,194 @@ def authenticate_google_user(email: str):
 
     email = email.strip().lower()
 
+    if not display_name:
+        display_name = email.split("@")[0]
+
+    display_name = display_name.strip()
+
     with _connect() as con:
 
-        row = pd.read_sql_query(
-            """
-            SELECT
-                username,
-                display_name,
-                email,
-                active
-            FROM dashboard_users
-            WHERE LOWER(email) = %s
-            LIMIT 1
-            """,
-            con,
-            params=(email,)
-        )
+        with con.cursor() as cur:
 
-    if row.empty:
-        return None
+            # ------------------------------------------------
+            # Check whether this Google email already exists
+            # ------------------------------------------------
 
-    user = row.iloc[0]
+            cur.execute(
+                """
+                SELECT
+                    username,
+                    display_name,
+                    email,
+                    active
+                FROM dashboard_users
+                WHERE LOWER(email) = %s
+                LIMIT 1
+                """,
+                (email,)
+            )
 
-    if not bool(user["active"]):
-        return None
+            row = cur.fetchone()
 
-    return {
-        "username": user["username"],
-        "display_name": user["display_name"],
-        "email": user["email"],
-        "active": bool(user["active"])
-    }
+            # =================================================
+            # EXISTING USER
+            # =================================================
+
+            if row:
+
+                username = row[0]
+                db_display_name = row[1]
+                db_email = row[2]
+                active = row[3]
+
+                # User was previously deactivated
+                if not active:
+                    return None
+
+                session_id = str(uuid.uuid4())
+
+                cur.execute(
+                    """
+                    UPDATE dashboard_users
+                    SET
+                        last_login_at = NOW(),
+                        login_count = login_count + 1
+                    WHERE username = %s
+                    """,
+                    (username,)
+                )
+
+                cur.execute(
+                    """
+                    INSERT INTO dashboard_login_events
+                    (
+                        username,
+                        event_type,
+                        session_id
+                    )
+                    VALUES
+                    (
+                        %s,
+                        %s,
+                        %s
+                    )
+                    """,
+                    (
+                        username,
+                        "GOOGLE_LOGIN",
+                        session_id
+                    )
+                )
+
+                con.commit()
+
+                return {
+                    "username": username,
+                    "display_name": db_display_name or display_name,
+                    "email": db_email,
+                    "active": True,
+                    "session_id": session_id
+                }
+
+            # =================================================
+            # NEW GOOGLE USER
+            # =================================================
+
+            username = email
+
+            # Make sure username is unique
+            cur.execute(
+                """
+                SELECT 1
+                FROM dashboard_users
+                WHERE LOWER(username) = LOWER(%s)
+                LIMIT 1
+                """,
+                (username,)
+            )
+
+            username_exists = cur.fetchone()
+
+            if username_exists:
+                username = (
+                    email
+                    + "_"
+                    + uuid.uuid4().hex[:8]
+                )
+
+            # Google users don't use the password.
+            # Generate an unusable random password hash
+            # because password_hash is NOT NULL in the table.
+            random_password = secrets.token_urlsafe(32)
+
+            password_hash = create_password_hash(
+                random_password
+            )
+
+            cur.execute(
+                """
+                INSERT INTO dashboard_users
+                (
+                    username,
+                    display_name,
+                    email,
+                    password_hash,
+                    active,
+                    last_login_at,
+                    login_count
+                )
+                VALUES
+                (
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    TRUE,
+                    NOW(),
+                    1
+                )
+                """,
+                (
+                    username,
+                    display_name,
+                    email,
+                    password_hash
+                )
+            )
+
+            session_id = str(uuid.uuid4())
+
+            cur.execute(
+                """
+                INSERT INTO dashboard_login_events
+                (
+                    username,
+                    event_type,
+                    session_id
+                )
+                VALUES
+                (
+                    %s,
+                    %s,
+                    %s
+                )
+                """,
+                (
+                    username,
+                    "GOOGLE_LOGIN",
+                    session_id
+                )
+            )
+
+            con.commit()
+
+            return {
+                "username": username,
+                "display_name": display_name,
+                "email": email,
+                "active": True,
+                "session_id": session_id
+            }
 
 def load_dashboard_users():
     with _connect() as con:
