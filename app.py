@@ -947,51 +947,51 @@ if st.session_state.get("dashboard_user", {}).get("username") == "admin":
 
     with st.expander("🔐 Admin — User Activity"):
 
-        # ----------------------------------------------------
-        # CREATE NEW USER
-        # ----------------------------------------------------
+        # # ----------------------------------------------------
+        # # CREATE NEW USER
+        # # ----------------------------------------------------
 
-        st.subheader("➕ Create New User")
+        # st.subheader("➕ Create New User")
 
-        with st.form("create_dashboard_user_form"):
+        # with st.form("create_dashboard_user_form"):
 
-            new_username = st.text_input(
-                "Username"
-            )
+        #     new_username = st.text_input(
+        #         "Username"
+        #     )
 
-            new_display_name = st.text_input(
-                "Display Name"
-            )
+        #     new_display_name = st.text_input(
+        #         "Display Name"
+        #     )
 
-            new_email = st.text_input(
-                "Google Email",
-                placeholder="example@gmail.com",
-                key="new_email"
-            )
+        #     new_email = st.text_input(
+        #         "Google Email",
+        #         placeholder="example@gmail.com",
+        #         key="new_email"
+        #     )
 
-            new_password = st.text_input(
-                "Password",
-                type="password"
-            )
+        #     new_password = st.text_input(
+        #         "Password",
+        #         type="password"
+        #     )
 
-            create_user_clicked = st.form_submit_button(
-                "Create User"
-            )
+        #     create_user_clicked = st.form_submit_button(
+        #         "Create User"
+        #     )
 
-            if create_user_clicked:
+        #     if create_user_clicked:
 
-                success, message = create_dashboard_user(
-                    new_username,
-                    new_display_name,
-                    new_password,
-                    new_email
-                )
+        #         success, message = create_dashboard_user(
+        #             new_username,
+        #             new_display_name,
+        #             new_password,
+        #             new_email
+        #         )
 
-                if success:
-                    st.success(message)
-                    st.rerun()
-                else:
-                    st.error(message)
+        #         if success:
+        #             st.success(message)
+        #             st.rerun()
+        #         else:
+        #             st.error(message)
 
         # ----------------------------------------------------
         # DASHBOARD USERS
