@@ -542,6 +542,7 @@ def load_dashboard_users():
             SELECT
                 username,
                 display_name,
+                email,
                 active,
                 login_count,
                 last_login_at,
@@ -551,7 +552,6 @@ def load_dashboard_users():
             """,
             con,
         )
-
 
 def load_dashboard_login_events(limit=100):
     with _connect() as con:
