@@ -1073,11 +1073,11 @@ if st.session_state.get("dashboard_user", {}).get("username") == "admin":
         # LOGIN ACTIVITY
         # ----------------------------------------------------
 
-        st.subheader("Recent Login Activity")
+        # st.subheader("Recent Login Activity")
 
-        login_df = load_dashboard_login_events(
-            limit=100
-        )
+        # login_df = load_dashboard_login_events(
+        #     limit=100
+        # )
 
         if login_df.empty:
 
