@@ -29,12 +29,10 @@ IST = ZoneInfo("Asia/Kolkata")
 MARKET_OPEN = dt_time(9, 15)
 MARKET_CLOSE = dt_time(15, 30)
 
-
 st.set_page_config(
     page_title="NSE Option Chain Dashboard",
     layout="wide"
 )
-
 
 st.markdown("""
 <style>
@@ -1007,7 +1005,7 @@ if st.session_state.get("dashboard_user", {}).get("username") == "admin":
 
         else:
 
-            st.subheader("Manage Users")
+            st.subheader("Dashboard Users")
 
             for _, row in users_df.iterrows():
 
