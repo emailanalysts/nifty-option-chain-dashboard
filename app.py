@@ -17,11 +17,11 @@ from calculations import (
     load_nifty_futures_history,
     load_buddy_dashboard_history,
     authenticate_dashboard_user,
+    authenticate_google_user,
     load_dashboard_users,
     load_dashboard_login_events,
     create_dashboard_user,
     set_dashboard_user_active,
-    authenticate_google_user,
 )
 
 IST = ZoneInfo("Asia/Kolkata")
