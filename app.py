@@ -16,11 +16,8 @@ from calculations import (
     load_latest_snapshot_on_or_before,
     load_nifty_futures_history,
     load_buddy_dashboard_history,
-    authenticate_dashboard_user,
     authenticate_google_user,
     load_dashboard_users,
-    load_dashboard_login_events,
-    create_dashboard_user,
     set_dashboard_user_active,
 )
 
@@ -945,57 +942,7 @@ if st.session_state.get("dashboard_user", {}).get("username") == "admin":
 
     with st.expander("🔐 Admin — User Activity"):
 
-        # # ----------------------------------------------------
-        # # CREATE NEW USER
-        # # ----------------------------------------------------
-
-        # st.subheader("➕ Create New User")
-
-        # with st.form("create_dashboard_user_form"):
-
-        #     new_username = st.text_input(
-        #         "Username"
-        #     )
-
-        #     new_display_name = st.text_input(
-        #         "Display Name"
-        #     )
-
-        #     new_email = st.text_input(
-        #         "Google Email",
-        #         placeholder="example@gmail.com",
-        #         key="new_email"
-        #     )
-
-        #     new_password = st.text_input(
-        #         "Password",
-        #         type="password"
-        #     )
-
-        #     create_user_clicked = st.form_submit_button(
-        #         "Create User"
-        #     )
-
-        #     if create_user_clicked:
-
-        #         success, message = create_dashboard_user(
-        #             new_username,
-        #             new_display_name,
-        #             new_password,
-        #             new_email
-        #         )
-
-        #         if success:
-        #             st.success(message)
-        #             st.rerun()
-        #         else:
-        #             st.error(message)
-
-        # ----------------------------------------------------
-        # DASHBOARD USERS
-        # ----------------------------------------------------
-
-        # st.subheader("Dashboard Users")
+        st.subheader("Dashboard Users")
 
         users_df = load_dashboard_users()
 
@@ -1005,37 +952,113 @@ if st.session_state.get("dashboard_user", {}).get("username") == "admin":
 
         else:
 
-            st.subheader("Dashboard Users")
+            # ------------------------------------------------
+            # Dashboard user list
+            # ------------------------------------------------
 
             for _, row in users_df.iterrows():
 
                 username = row["username"]
-                is_active = bool(row["active"])
 
-                col1, col2, col3 = st.columns(
-                    [3, 2, 1]
+                display_name = (
+                    row["display_name"]
+                    if pd.notna(row["display_name"])
+                    and str(row["display_name"]).strip()
+                    else "Google User"
                 )
 
-                with col1:
-                    st.write(
-                        f"**{username}**"
+                email = (
+                    row["email"]
+                    if pd.notna(row["email"])
+                    and str(row["email"]).strip()
+                    else "No Google email"
+                )
+
+                is_active = bool(row["active"])
+
+                last_login = row["last_login_at"]
+                created_at = row["created_at"]
+
+                # ------------------------------------------------
+                # Format dates
+                # ------------------------------------------------
+
+                if pd.notna(last_login):
+
+                    last_login_text = (
+                        pd.Timestamp(last_login)
+                        .tz_convert(IST)
+                        .strftime("%d-%b-%Y %H:%M")
                     )
 
+                else:
+
+                    last_login_text = "Never"
+
+                if pd.notna(created_at):
+
+                    created_text = (
+                        pd.Timestamp(created_at)
+                        .tz_convert(IST)
+                        .strftime("%d-%b-%Y %H:%M")
+                    )
+
+                else:
+
+                    created_text = "—"
+
+                # ------------------------------------------------
+                # User row
+                # ------------------------------------------------
+
+                col1, col2, col3, col4, col5 = st.columns(
+                    [3, 3, 2, 2, 1.3]
+                )
+
+                # Name + Google email
+                with col1:
+
+                    st.markdown(
+                        f"**{display_name}**"
+                    )
+
+                    st.caption(email)
+
+                # Last login
                 with col2:
 
-                    status = (
-                        "🟢 Active"
-                        if is_active
-                        else "🔴 Inactive"
+                    st.caption("Last Login")
+
+                    st.write(
+                        last_login_text
                     )
 
-                    st.write(status)
-
+                # Created
                 with col3:
+
+                    st.caption("Created")
+
+                    st.write(
+                        created_text
+                    )
+
+                # Status
+                with col4:
+
+                    if is_active:
+
+                        st.write("🟢 **Active**")
+
+                    else:
+
+                        st.write("🔴 **Inactive**")
+
+                # Action
+                with col5:
 
                     if username.lower() == "admin":
 
-                        st.caption("Admin")
+                        st.caption("🔐 Admin")
 
                     else:
 
@@ -1058,44 +1081,19 @@ if st.session_state.get("dashboard_user", {}).get("username") == "admin":
                             )
 
                             if success:
+
                                 st.success(message)
+
                                 st.rerun()
+
                             else:
+
                                 st.error(message)
 
-            st.dataframe(
-                users_df,
-                use_container_width=True,
-                hide_index=True,
-            )
-
-        # ----------------------------------------------------
-        # LOGIN ACTIVITY
-        # ----------------------------------------------------
-
-        # st.subheader("Recent Login Activity")
-
-        # login_df = load_dashboard_login_events(
-        #     limit=100
-        # )
-
-        if login_df.empty:
-
-            st.info(
-                "No login activity found."
-            )
-
-        else:
-
-            st.dataframe(
-                login_df,
-                use_container_width=True,
-                hide_index=True,
-            )
+                st.divider()
 
 @st.fragment(run_every="3m")
 def auto_refresh_dashboard():
     render_dashboard()
-
 
 auto_refresh_dashboard()
