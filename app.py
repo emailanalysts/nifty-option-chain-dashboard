@@ -858,7 +858,7 @@ def render_dashboard():
 # ============================================================
 
 # ============================================================
-# GOOGLE LOGIN — TEST
+# GOOGLE LOGIN
 # ============================================================
 
 if not st.user.is_logged_in:
@@ -872,17 +872,24 @@ if not st.user.is_logged_in:
 
     st.stop()
 
+# ============================================================
+# GOOGLE USER INFORMATION
+# ============================================================
+
 google_email = st.user.email
 google_name = st.user.name
 
-st.success(f"Logged in as: {google_name}")
-st.info(f"Google account: {google_email}")
+col_login, col_logout = st.columns([8, 1])
 
-if st.button("Logout"):
-    st.logout()
+with col_login:
+    st.caption(f"Logged in as: {google_name} ({google_email})")
 
-st.stop()
-
+with col_logout:
+    st.button(
+        "Logout",
+        on_click=st.logout
+    )
+    
 # ============================================================
 # ADMIN ACTIVITY
 # ============================================================
