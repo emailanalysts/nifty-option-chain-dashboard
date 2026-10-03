@@ -11,15 +11,12 @@ import uuid
 
 IST = ZoneInfo("Asia/Kolkata")
 
-
 def _db_url():
     return st.secrets["connections"]["postgresql"]["url"]
-
 
 def _connect():
     import psycopg2
     return psycopg2.connect(_db_url(), connect_timeout=10)
-
 
 def database_status():
     """Return a safe, non-secret Supabase connectivity summary for the UI."""
@@ -38,7 +35,6 @@ def database_status():
     except Exception as e:
         return {"connected": False, "count": 0, "latest": None, "error": str(e)}
 
-
 def prepare_chain(df, symbol):
     df = df.copy()
     df["expiryDate"] = pd.to_datetime(df["expiryDate"], dayfirst=True, errors="coerce")
@@ -56,12 +52,10 @@ def prepare_chain(df, symbol):
     df["symbol"] = symbol
     return df
 
-
 def atm_strike(df):
     spot = float(df["underlyingValue"].iloc[0])
     idx = (df["strikePrice"] - spot).abs().idxmin()
     return float(df.loc[idx, "strikePrice"])
-
 
 def strike_wise_oi(df, window=10):
     atm = atm_strike(df)
@@ -72,7 +66,6 @@ def strike_wise_oi(df, window=10):
     return df[df["strikePrice"].isin(strikes[lo:hi])][
         ["strikePrice", "CE_OI", "PE_OI"]
     ].sort_values("strikePrice")
-
 
 def max_pain(df, return_table=False):
     strikes = np.sort(df["strikePrice"].unique())
@@ -87,18 +80,15 @@ def max_pain(df, return_table=False):
     mp = float(out.loc[out["totalPain"].idxmin(), "strikePrice"])
     return (mp, out) if return_table else mp
 
-
 def overall_oi(nifty, bank):
     return {
         "NIFTY": {"CE": int(nifty["CE_OI"].sum()), "PE": int(nifty["PE_OI"].sum())},
         "BANKNIFTY": {"CE": int(bank["CE_OI"].sum()), "PE": int(bank["PE_OI"].sum())},
     }
 
-
 def _read_df(sql, params):
     with _connect() as con:
         return pd.read_sql_query(sql, con, params=params)
-
 
 def load_intraday_history(symbol, trading_date=None):
     date_value = (
@@ -214,7 +204,6 @@ def latest_saved_trading_date(symbol):
             row = cur.fetchone()
     return row[0].isoformat() if row and row[0] else None
 
-
 def previous_saved_trading_date(symbol, before_date):
     before = pd.Timestamp(before_date).date()
     with _connect() as con:
@@ -225,7 +214,6 @@ def previous_saved_trading_date(symbol, before_date):
             )
             row = cur.fetchone()
     return row[0].isoformat() if row and row[0] else None
-
 
 def load_latest_snapshot_on_or_before(symbol, trading_date):
     if not trading_date:
@@ -413,55 +401,11 @@ def verify_password(
     except Exception:
         return False
 
-
 def authenticate_dashboard_user(
     username: str,
     password: str
 ):
 
-def authenticate_google_user(email: str):
-    """
-    Authenticate a Google/OIDC user against dashboard_users.
-    Returns the dashboard user details if the email is active.
-    """
-
-    if not email:
-        return None
-
-    email = email.strip().lower()
-
-    with _connect() as con:
-
-        row = pd.read_sql_query(
-            """
-            SELECT
-                username,
-                display_name,
-                email,
-                active
-            FROM dashboard_users
-            WHERE LOWER(email) = %s
-            LIMIT 1
-            """,
-            con,
-            params=(email,)
-        )
-
-    if row.empty:
-        return None
-
-    user = row.iloc[0]
-
-    if not bool(user["active"]):
-        return None
-
-    return {
-        "username": user["username"],
-        "display_name": user["display_name"],
-        "email": user["email"],
-        "active": bool(user["active"])
-    }
-    
     username = username.strip()
 
     if not username or not password:
@@ -546,6 +490,50 @@ def authenticate_google_user(email: str):
                 "display_name": display_name or db_username,
                 "session_id": session_id,
             }
+
+
+def authenticate_google_user(email: str):
+    """
+    Authenticate a Google/OIDC user against dashboard_users.
+    Returns the dashboard user details if the email is active.
+    """
+
+    if not email:
+        return None
+
+    email = email.strip().lower()
+
+    with _connect() as con:
+
+        row = pd.read_sql_query(
+            """
+            SELECT
+                username,
+                display_name,
+                email,
+                active
+            FROM dashboard_users
+            WHERE LOWER(email) = %s
+            LIMIT 1
+            """,
+            con,
+            params=(email,)
+        )
+
+    if row.empty:
+        return None
+
+    user = row.iloc[0]
+
+    if not bool(user["active"]):
+        return None
+
+    return {
+        "username": user["username"],
+        "display_name": user["display_name"],
+        "email": user["email"],
+        "active": bool(user["active"])
+    }
 
 def load_dashboard_users():
     with _connect() as con:
