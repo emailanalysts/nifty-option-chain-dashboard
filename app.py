@@ -858,12 +858,28 @@ def render_dashboard():
 # ============================================================
 
 # ============================================================
-# GOOGLE LOGIN — TEMPORARY TEST
+# GOOGLE LOGIN — TEST
 # ============================================================
 
-st.write("Streamlit version:", st.__version__)
-st.write("Has st.user:", hasattr(st, "user"))
-st.write("Has st.experimental_user:", hasattr(st, "experimental_user"))
+if not st.user.is_logged_in:
+    st.title("🔐 NSE Option Dashboard")
+    st.write("Please sign in with your Google account.")
+
+    st.button(
+        "Sign in with Google",
+        on_click=st.login
+    )
+
+    st.stop()
+
+google_email = st.user.email
+google_name = st.user.name
+
+st.success(f"Logged in as: {google_name}")
+st.info(f"Google account: {google_email}")
+
+if st.button("Logout"):
+    st.logout()
 
 st.stop()
 
