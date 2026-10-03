@@ -880,7 +880,8 @@ if not st.user.is_logged_in:
 google_email = st.user.email
 
 google_user = authenticate_google_user(
-    google_email
+    google_email,
+    st.user.name
 )
 
 # ------------------------------------------------------------
