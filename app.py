@@ -962,6 +962,12 @@ if st.session_state.get("dashboard_user", {}).get("username") == "admin":
                 "Display Name"
             )
 
+            new_email = st.text_input(
+                "Google Email",
+                placeholder="example@gmail.com",
+                key="new_email"
+            )
+
             new_password = st.text_input(
                 "Password",
                 type="password"
@@ -976,7 +982,8 @@ if st.session_state.get("dashboard_user", {}).get("username") == "admin":
                 success, message = create_dashboard_user(
                     new_username,
                     new_display_name,
-                    new_password
+                    new_password,
+                    new_email
                 )
 
                 if success:
