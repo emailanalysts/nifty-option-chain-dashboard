@@ -570,41 +570,63 @@ def load_dashboard_login_events(limit=100):
             params=(limit,),
         )
 
-def create_dashboard_user(username, display_name, password):
+def create_dashboard_user(
+    username,
+    display_name,
+    password,
+    email=None
+):
+    """
+    Create a dashboard user.
+
+    The Google email is optional so an account can be created
+    first and linked to Google later if required.
+    """
+
     username = username.strip()
     display_name = display_name.strip()
 
-    if not username:
-        return False, "Username is required."
+    if email:
+        email = email.strip().lower()
+    else:
+        email = None
 
-    if not password:
-        return False, "Password is required."
-
-    password_hash = create_password_hash(password)
+    if not username or not password:
+        return False, "Username and password are required."
 
     try:
+
+        password_hash = create_password_hash(password)
+
         with _connect() as con:
+
             with con.cursor() as cur:
+
                 cur.execute(
                     """
                     INSERT INTO dashboard_users
                     (
                         username,
                         display_name,
-                        password_hash
+                        email,
+                        password_hash,
+                        active
                     )
                     VALUES
                     (
                         %s,
                         %s,
-                        %s
+                        %s,
+                        %s,
+                        TRUE
                     )
                     """,
                     (
                         username,
-                        display_name or username,
-                        password_hash,
-                    ),
+                        display_name,
+                        email,
+                        password_hash
+                    )
                 )
 
             con.commit()
@@ -612,12 +634,13 @@ def create_dashboard_user(username, display_name, password):
         return True, "User created successfully."
 
     except Exception as e:
-        error_text = str(e)
 
-        if "duplicate key" in error_text.lower():
-            return False, "Username already exists."
+        error_message = str(e)
 
-        return False, "Unable to create user."
+        if "duplicate" in error_message.lower():
+            return False, "Username or Google email already exists."
+
+        return False, error_message
 
 def set_dashboard_user_active(username, active):
     username = username.strip()
