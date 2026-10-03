@@ -1039,20 +1039,6 @@ if st.session_state.get("dashboard_user", {}).get("username") == "admin":
                 hide_index=True,
             )
 
-user = st.session_state.get("dashboard_user")
-
-col1, col2 = st.columns([8, 1])
-
-with col1:
-    if user:
-        st.caption(f"Logged in as: {user['display_name']}")
-
-with col2:
-    if st.button("Logout"):
-        st.session_state["authenticated"] = False
-        st.session_state.pop("dashboard_user", None)
-        st.rerun()
-
 @st.fragment(run_every="3m")
 def auto_refresh_dashboard():
     render_dashboard()
