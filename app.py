@@ -21,6 +21,7 @@ from calculations import (
     load_dashboard_login_events,
     create_dashboard_user,
     set_dashboard_user_active,
+    authenticate_google_user,
 )
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -873,21 +874,68 @@ if not st.user.is_logged_in:
     st.stop()
 
 # ============================================================
-# GOOGLE USER INFORMATION
+# GOOGLE USER AUTHORIZATION
 # ============================================================
 
 google_email = st.user.email
-google_name = st.user.name
+
+google_user = authenticate_google_user(
+    google_email
+)
+
+# ------------------------------------------------------------
+# GOOGLE ACCOUNT NOT AUTHORIZED
+# ------------------------------------------------------------
+
+if google_user is None:
+
+    st.error(
+        "🚫 Your Google account is not authorized "
+        "to access this dashboard."
+    )
+
+    st.info(
+        "Please contact the dashboard administrator "
+        "to request access."
+    )
+
+    st.button(
+        "Sign out",
+        on_click=st.logout,
+        key="unauthorized_google_logout"
+    )
+
+    st.stop()
+
+
+# ------------------------------------------------------------
+# STORE AUTHORIZED USER IN SESSION
+# ------------------------------------------------------------
+
+st.session_state["dashboard_user"] = google_user
+st.session_state["authenticated"] = True
+
+
+# ============================================================
+# GOOGLE USER INFORMATION
+# ============================================================
 
 col_login, col_logout = st.columns([8, 1])
 
 with col_login:
-    st.caption(f"Logged in as: {google_name} ({google_email})")
+
+    st.caption(
+        f"Logged in as: "
+        f"{google_user['display_name']} "
+        f"({google_user['email']})"
+    )
 
 with col_logout:
+
     st.button(
         "Logout",
-        on_click=st.logout
+        on_click=st.logout,
+        key="google_logout"
     )
     
 # ============================================================
