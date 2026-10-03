@@ -419,6 +419,49 @@ def authenticate_dashboard_user(
     password: str
 ):
 
+def authenticate_google_user(email: str):
+    """
+    Authenticate a Google/OIDC user against dashboard_users.
+    Returns the dashboard user details if the email is active.
+    """
+
+    if not email:
+        return None
+
+    email = email.strip().lower()
+
+    with _connect() as con:
+
+        row = pd.read_sql_query(
+            """
+            SELECT
+                username,
+                display_name,
+                email,
+                active
+            FROM dashboard_users
+            WHERE LOWER(email) = %s
+            LIMIT 1
+            """,
+            con,
+            params=(email,)
+        )
+
+    if row.empty:
+        return None
+
+    user = row.iloc[0]
+
+    if not bool(user["active"]):
+        return None
+
+    return {
+        "username": user["username"],
+        "display_name": user["display_name"],
+        "email": user["email"],
+        "active": bool(user["active"])
+    }
+    
     username = username.strip()
 
     if not username or not password:
