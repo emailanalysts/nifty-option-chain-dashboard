@@ -702,11 +702,9 @@ def load_dashboard_users():
         return pd.read_sql_query(
             """
             SELECT
-                username,
                 display_name,
                 email,
                 active,
-                login_count,
                 last_login_at,
                 created_at
             FROM dashboard_users
