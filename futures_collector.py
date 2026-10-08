@@ -292,7 +292,7 @@ def collect_snapshot():
         row = select_nearest_future(df)
 
         # ----------------------------------------------------
-        # Extract and FORCE native Python types
+        # Identifier
         # ----------------------------------------------------
 
         identifier = row.get("identifier")
@@ -300,46 +300,76 @@ def collect_snapshot():
         if identifier is not None:
             identifier = str(identifier)
 
+        # ----------------------------------------------------
         # Expiry
+        # ----------------------------------------------------
+
         expiry_value = row["expiry_dt"]
 
         if pd.isna(expiry_value):
+
             expiry_date = None
+
         else:
+
             expiry_date = expiry_value.date()
 
-        # Last price
+        # ----------------------------------------------------
+        # Last Price
+        # ----------------------------------------------------
+
         last_price_raw = pd.to_numeric(
             row.get("lastPrice"),
             errors="coerce"
         )
 
         if pd.isna(last_price_raw):
-            last_price = None
-        else:
-            last_price = float(last_price_raw)
 
+            last_price = None
+
+        else:
+
+            last_price = float(
+                last_price_raw
+            )
+
+        # ----------------------------------------------------
         # Volume
+        # ----------------------------------------------------
+
         volume_raw = pd.to_numeric(
             row.get("totalTradedVolume"),
             errors="coerce"
         )
 
         if pd.isna(volume_raw):
-            volume = None
-        else:
-            volume = int(volume_raw)
 
-        # Open interest
+            volume = None
+
+        else:
+
+            volume = int(
+                volume_raw
+            )
+
+        # ----------------------------------------------------
+        # Open Interest
+        # ----------------------------------------------------
+
         oi_raw = pd.to_numeric(
             row.get("openInterest"),
             errors="coerce"
         )
 
         if pd.isna(oi_raw):
+
             open_interest = None
+
         else:
-            open_interest = int(oi_raw)
+
+            open_interest = int(
+                oi_raw
+            )
 
         # ----------------------------------------------------
         # Create record
@@ -361,6 +391,15 @@ def collect_snapshot():
 
             "identifier":
                 identifier,
+
+            "open_price":
+                None,
+
+            "high_price":
+                None,
+
+            "low_price":
+                None,
 
             "last_price":
                 last_price,
@@ -444,6 +483,114 @@ def calculate_oi_changes(records):
 
     return records
 
+
+# ============================================================
+# CALCULATE SYNTHETIC 5-MINUTE OHLC
+# ============================================================
+
+def calculate_5m_ohlc(records):
+
+    """
+    Build reconstructed 5-minute OHLC from successive
+    NSE live prices.
+
+    IMPORTANT:
+    This is NOT native NSE 5-minute OHLC.
+
+    It reconstructs a simple candle using the previous
+    stored price and the current live price:
+
+        Open  = previous snapshot price
+        High  = max(previous, current)
+        Low   = min(previous, current)
+        Close = current snapshot price
+    """
+
+    with connect_database() as con:
+
+        with con.cursor() as cur:
+
+            for record in records:
+
+                current_price = record["last_price"]
+
+                if current_price is None:
+
+                    record["open_price"] = None
+                    record["high_price"] = None
+                    record["low_price"] = None
+
+                    continue
+
+                # ------------------------------------------------
+                # Find previous stored price
+                # ------------------------------------------------
+
+                cur.execute(
+                    """
+                    SELECT last_price
+                    FROM futures_5m_snapshots
+                    WHERE symbol = %s
+                      AND trading_date = %s
+                    ORDER BY snapshot_time DESC
+                    LIMIT 1
+                    """,
+                    (
+                        str(record["symbol"]),
+                        record["trading_date"],
+                    )
+                )
+
+                row = cur.fetchone()
+
+                # ------------------------------------------------
+                # First snapshot of the day
+                # ------------------------------------------------
+
+                if (
+                    row is None
+                    or row[0] is None
+                ):
+
+                    previous_price = float(
+                        current_price
+                    )
+
+                else:
+
+                    previous_price = float(
+                        row[0]
+                    )
+
+                current_price = float(
+                    current_price
+                )
+
+                # ------------------------------------------------
+                # Synthetic 5-minute candle
+                # ------------------------------------------------
+
+                record["open_price"] = float(
+                    previous_price
+                )
+
+                record["high_price"] = float(
+                    max(
+                        previous_price,
+                        current_price
+                    )
+                )
+
+                record["low_price"] = float(
+                    min(
+                        previous_price,
+                        current_price
+                    )
+                )
+
+    return records
+
+
 # ============================================================
 # INSERT INTO SUPABASE
 # ============================================================
@@ -458,6 +605,9 @@ def save_records(records):
             symbol,
             expiry_date,
             identifier,
+            open_price,
+            high_price,
+            low_price,
             last_price,
             volume,
             open_interest,
@@ -467,7 +617,8 @@ def save_records(records):
         VALUES
         (
             %s, %s, %s, %s, %s,
-            %s, %s, %s, %s, %s
+            %s, %s, %s, %s,
+            %s, %s, %s, %s
         )
         ON CONFLICT
         (
@@ -488,37 +639,78 @@ def save_records(records):
             for record in records:
 
                 params = (
+
                     record["snapshot_time"],
+
                     record["trading_date"],
-                    str(record["symbol"]),
+
+                    str(
+                        record["symbol"]
+                    ),
+
                     record["expiry_date"],
+
                     record["identifier"],
 
                     (
-                        float(record["last_price"])
+                        float(
+                            record["open_price"]
+                        )
+                        if record["open_price"] is not None
+                        else None
+                    ),
+
+                    (
+                        float(
+                            record["high_price"]
+                        )
+                        if record["high_price"] is not None
+                        else None
+                    ),
+
+                    (
+                        float(
+                            record["low_price"]
+                        )
+                        if record["low_price"] is not None
+                        else None
+                    ),
+
+                    (
+                        float(
+                            record["last_price"]
+                        )
                         if record["last_price"] is not None
                         else None
                     ),
 
                     (
-                        int(record["volume"])
+                        int(
+                            record["volume"]
+                        )
                         if record["volume"] is not None
                         else None
                     ),
 
                     (
-                        int(record["open_interest"])
+                        int(
+                            record["open_interest"]
+                        )
                         if record["open_interest"] is not None
                         else None
                     ),
 
                     (
-                        float(record["change_in_oi"])
+                        float(
+                            record["change_in_oi"]
+                        )
                         if record["change_in_oi"] is not None
                         else None
                     ),
 
-                    str(record["source"]),
+                    str(
+                        record["source"]
+                    ),
                 )
 
                 cur.execute(
@@ -528,12 +720,15 @@ def save_records(records):
 
                 # rowcount = 1 means inserted
                 # rowcount = 0 means duplicate
+
                 if cur.rowcount == 1:
+
                     inserted += 1
 
         con.commit()
 
     return inserted
+
 
 # ============================================================
 # DISPLAY RESULT
@@ -542,8 +737,9 @@ def save_records(records):
 def display_records(records):
 
     print()
+
     print("=" * 90)
-    print("FUTURES SNAPSHOT")
+    print("FUTURES 5-MINUTE SNAPSHOT")
     print("=" * 90)
 
     for record in records:
@@ -551,7 +747,8 @@ def display_records(records):
         print()
 
         print(
-            f"Symbol       : {record['symbol']}"
+            f"Symbol       : "
+            f"{record['symbol']}"
         )
 
         print(
@@ -562,6 +759,21 @@ def display_records(records):
         print(
             f"Expiry       : "
             f"{record['expiry_date']}"
+        )
+
+        print(
+            f"5-min Open   : "
+            f"{record['open_price']}"
+        )
+
+        print(
+            f"5-min High   : "
+            f"{record['high_price']}"
+        )
+
+        print(
+            f"5-min Low    : "
+            f"{record['low_price']}"
         )
 
         print(
@@ -592,8 +804,9 @@ def display_records(records):
 if __name__ == "__main__":
 
     print()
+
     print("=" * 90)
-    print("NSE FUTURES → SUPABASE COLLECTOR")
+    print("NSE FUTURES → SUPABASE 5-MIN COLLECTOR")
     print("=" * 90)
 
     now = datetime.now(IST)
@@ -644,10 +857,20 @@ if __name__ == "__main__":
         )
 
         # ----------------------------------------------------
+        # CALCULATE SYNTHETIC 5-MIN OHLC
+        # ----------------------------------------------------
+
+        records = calculate_5m_ohlc(
+            records
+        )
+
+        # ----------------------------------------------------
         # DISPLAY
         # ----------------------------------------------------
 
-        display_records(records)
+        display_records(
+            records
+        )
 
         # ----------------------------------------------------
         # SAVE
@@ -658,6 +881,7 @@ if __name__ == "__main__":
         )
 
         print()
+
         print("=" * 90)
 
         print(
@@ -669,6 +893,7 @@ if __name__ == "__main__":
     except Exception as e:
 
         print()
+
         print("=" * 90)
         print("COLLECTOR ERROR")
         print("=" * 90)
