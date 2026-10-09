@@ -2,15 +2,14 @@ name: Futures 5M Collector
 
 on:
   schedule:
-    # 09:15, 09:20, ..., 09:55 IST
-    - cron: "45-59/5 3 * * 1-5"
+    # 09:15–09:55 IST, every 5 minutes
+    - cron: "15-55/5 3 * * 1-5"
 
-    # 10:00 to 14:55 IST
+    # 10:00–15:25 IST, every 5 minutes
     - cron: "*/5 4-9 * * 1-5"
 
-    # Final collection at 15:00 IST
+    # Final collection at 15:30 IST
     - cron: "0 10 * * 1-5"
-    - cron: "30 10 * * 1-5"
 
   workflow_dispatch:
 
