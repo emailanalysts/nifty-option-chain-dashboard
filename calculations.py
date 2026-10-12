@@ -243,94 +243,6 @@ def load_latest_snapshot_on_or_before(symbol, trading_date):
     df["symbol"] = symbol
     return prepare_chain(df, symbol)
     
-def load_buddy_dashboard_history(limit=20):
-    """
-    Load the BUDDY output required by the Streamlit dashboard.
-    """
-
-    df = _read_df(
-        """
-        SELECT
-            snapshot_time,
-            selected_strike AS strike,
-            buddy_score,
-            v12_status AS "V12",
-            v13_status AS "V13",
-            v14_status AS "V14",
-            v152_status AS "V15.2",
-            final_signal
-        FROM buddy_analysis_snapshots
-        ORDER BY snapshot_time DESC
-        LIMIT %s
-        """,
-        (limit,),
-    )
-
-    if df.empty:
-        return df
-
-    # Convert UTC database timestamp to IST
-    df["snapshot_time"] = (
-        pd.to_datetime(df["snapshot_time"], utc=True)
-        .dt.tz_convert(IST)
-        .dt.strftime("%d-%b-%Y %H:%M:%S")
-    )
-
-    return df
-# ============================================================
-# NIFTY FUTURES HISTORY
-# ============================================================
-
-def load_nifty_futures_history(trading_date=None):
-
-    date_value = (
-        pd.Timestamp(trading_date).date()
-        if trading_date
-        else datetime.now(IST).date()
-    )
-
-    df = _read_df(
-        """
-        SELECT
-            snapshot_time AS timestamp,
-            trading_date,
-            expiry_date AS expiry,
-            price,
-            volume,
-            cumulative_volume,
-            vwap
-        FROM nifty_futures_snapshots
-        WHERE trading_date=%s
-        ORDER BY snapshot_time
-        """,
-        (date_value,),
-    )
-
-    if df.empty:
-        return df
-
-    df["timestamp"] = (
-        pd.to_datetime(
-            df["timestamp"],
-            utc=True
-        )
-        .dt.tz_convert(IST)
-    )
-
-    for col in [
-        "price",
-        "volume",
-        "cumulative_volume",
-        "vwap",
-    ]:
-
-        df[col] = pd.to_numeric(
-            df[col],
-            errors="coerce"
-        )
-
-    return df
-
 # ============================================================
 # DASHBOARD AUTHENTICATION
 # ============================================================
@@ -837,4 +749,3 @@ def set_dashboard_user_active(username, active):
 
     except Exception:
         return False, "Unable to update user status."
-
