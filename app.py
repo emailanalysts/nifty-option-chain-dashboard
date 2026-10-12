@@ -11,6 +11,7 @@ from calculations import (
     max_pain,
     overall_oi,
     load_intraday_history,
+    load_nifty_futures_history,
     latest_saved_trading_date,
     previous_saved_trading_date,
     load_latest_snapshot_on_or_before,
@@ -507,6 +508,66 @@ def render_dashboard():
             fig,
             use_container_width=True,
             key=f"coi_chart_{symbol}",
+        )
+
+    # =========================================================
+    # NIFTY FUTURES PRICE & VWAP
+    # =========================================================
+
+    st.divider()
+    st.subheader("NIFTY Futures Price & VWAP")
+
+    futures_hist = load_nifty_futures_history()
+
+    if futures_hist.empty:
+        st.info(
+            "No saved NIFTY futures price/VWAP history is available. "
+            "The chart will appear when data exists in "
+            "`nifty_futures_snapshots`."
+        )
+    else:
+        futures_fig = go.Figure()
+        futures_fig.add_trace(
+            go.Scatter(
+                x=futures_hist["timestamp"],
+                y=futures_hist["price"],
+                mode="lines",
+                name="NIFTY Futures Price",
+                line=dict(width=2),
+            )
+        )
+        if "vwap" in futures_hist.columns and futures_hist["vwap"].notna().any():
+            futures_fig.add_trace(
+                go.Scatter(
+                    x=futures_hist["timestamp"],
+                    y=futures_hist["vwap"],
+                    mode="lines",
+                    name="VWAP",
+                    line=dict(width=2, dash="dash"),
+                )
+            )
+
+        latest_futures_time = futures_hist["timestamp"].max()
+        latest_futures_date = futures_hist["trading_date"].max()
+        futures_fig.update_layout(
+            height=350,
+            xaxis_title="Time (IST)",
+            yaxis_title="Price",
+            hovermode="x unified",
+            legend=dict(
+                orientation="h", yanchor="bottom", y=1.02,
+                xanchor="left", x=0
+            ),
+            margin=dict(l=45, r=20, t=40, b=45),
+        )
+        st.caption(
+            f"Showing saved futures data for {latest_futures_date}; "
+            f"latest observation: {latest_futures_time.strftime('%d-%b-%Y %H:%M IST')}."
+        )
+        st.plotly_chart(
+            futures_fig,
+            use_container_width=True,
+            key="nifty_futures_price_vwap_chart",
         )
 
     # =========================================================
