@@ -14,8 +14,6 @@ from calculations import (
     latest_saved_trading_date,
     previous_saved_trading_date,
     load_latest_snapshot_on_or_before,
-    load_nifty_futures_history,
-    load_buddy_dashboard_history,
     authenticate_google_user,
     load_dashboard_users,
     set_dashboard_user_active,
@@ -232,11 +230,6 @@ def render_dashboard():
 
         st.warning(
             "No option-chain snapshot is available in Supabase yet."
-        )
-
-        st.info(
-            "The background collector will populate the dashboard "
-            "automatically during NSE market hours."
         )
 
         return
@@ -516,107 +509,6 @@ def render_dashboard():
             key=f"coi_chart_{symbol}",
         )
 
-        # =====================================================
-        # 2. NIFTY FUTURES — PRICE + VWAP
-        # =====================================================
-
-        if symbol == "NIFTY":
-
-            st.subheader(
-                "2. NIFTY Futures — Price & VWAP"
-            )
-
-            futures_date = choose_display_date(
-                "NIFTY",
-                now
-            )
-
-            futures_hist = (
-                load_nifty_futures_history(
-                    futures_date
-                )
-                if futures_date
-                else pd.DataFrame()
-            )
-
-            fig_futures = go.Figure()
-
-            if not futures_hist.empty:
-
-                # -------------------------------------------------
-                # NIFTY FUTURES PRICE
-                # -------------------------------------------------
-
-                fig_futures.add_trace(
-                    go.Scatter(
-                        x=futures_hist["timestamp"],
-                        y=futures_hist["price"],
-                        mode="lines",
-                        name="NIFTY Futures",
-                        line=dict(
-                            color="blue",
-                            width=2
-                        ),
-                    )
-                )
-
-                # -------------------------------------------------
-                # VWAP
-                # -------------------------------------------------
-
-                fig_futures.add_trace(
-                    go.Scatter(
-                        x=futures_hist["timestamp"],
-                        y=futures_hist["vwap"],
-                        mode="lines",
-                        name="VWAP",
-                        line=dict(
-                            color="orange",
-                            width=2
-                        ),
-                    )
-                )
-
-            else:
-
-                fig_futures.add_annotation(
-                    text="No NIFTY futures data available.",
-                    x=0.5,
-                    y=0.5,
-                    xref="paper",
-                    yref="paper",
-                    showarrow=False,
-                )
-
-            fig_futures.update_layout(
-
-                height=450,
-
-                xaxis=dict(
-                    title="Time",
-                ),
-
-                yaxis=dict(
-                    title="NIFTY Futures Price",
-                ),
-
-                hovermode="x unified",
-
-                legend=dict(
-                    orientation="h",
-                    yanchor="bottom",
-                    y=1.02,
-                    xanchor="left",
-                    x=0,
-                ),
-            )
-
-            st.plotly_chart(
-                fig_futures,
-                use_container_width=True,
-                key="nifty_futures_vwap_chart",
-            )
-
     # =========================================================
     # 4. OVERALL OPEN INTEREST
     # =========================================================
@@ -831,23 +723,6 @@ def render_dashboard():
                 use_container_width=True,
                 key=chart_key
             )
-
-    # ============================================================
-    # BUDDY ANALYSIS
-    # ============================================================
-    
-    st.subheader("BUDDY Analysis")
-    
-    buddy_df = load_buddy_dashboard_history(limit=20)
-    
-    if buddy_df.empty:
-        st.info("No BUDDY analysis snapshots available yet.")
-    else:
-        st.dataframe(
-            buddy_df,
-            use_container_width=True,
-            hide_index=True
-        )
 
 # ============================================================
 # AUTO REFRESH
