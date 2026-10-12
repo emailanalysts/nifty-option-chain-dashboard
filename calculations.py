@@ -243,6 +243,41 @@ def load_latest_snapshot_on_or_before(symbol, trading_date):
     df["symbol"] = symbol
     return prepare_chain(df, symbol)
     
+
+def load_nifty_futures_history(trading_date=None):
+    """Load NIFTY futures price/VWAP observations from Supabase."""
+    if trading_date:
+        date_value = pd.Timestamp(trading_date).date()
+        sql = """
+            SELECT snapshot_time AS timestamp, trading_date,
+                   expiry_date AS expiry, price, volume, cumulative_volume, vwap
+            FROM nifty_futures_snapshots
+            WHERE trading_date = %s
+            ORDER BY snapshot_time
+        """
+        params = (date_value,)
+    else:
+        sql = """
+            SELECT snapshot_time AS timestamp, trading_date,
+                   expiry_date AS expiry, price, volume, cumulative_volume, vwap
+            FROM nifty_futures_snapshots
+            WHERE trading_date = (
+                SELECT MAX(trading_date)
+                FROM nifty_futures_snapshots
+                WHERE trading_date <= %s
+            )
+            ORDER BY snapshot_time
+        """
+        params = (datetime.now(IST).date(),)
+
+    df = _read_df(sql, params)
+    if df.empty:
+        return df
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert(IST)
+    for col in ["price", "volume", "cumulative_volume", "vwap"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
+
 # ============================================================
 # DASHBOARD AUTHENTICATION
 # ============================================================
