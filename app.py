@@ -406,6 +406,7 @@ def render_dashboard():
                     mode="lines+markers",
                     name="Cumulative COI",
                     yaxis="y",
+                    hovertemplate="%{x|%H:%M:%S}<br>Cumulative COI: %{y:,.3f}<extra></extra>",
                 )
             )
 
@@ -438,6 +439,7 @@ def render_dashboard():
                             color="red",
                             width=2
                         ),
+                        hovertemplate="%{x|%H:%M:%S}<br>" + ce_name + ": %{y:,.3f}<extra></extra>",
                     )
                 )
 
@@ -455,6 +457,7 @@ def render_dashboard():
                             color="green",
                             width=2
                         ),
+                        hovertemplate="%{x|%H:%M:%S}<br>" + pe_name + ": %{y:,.3f}<extra></extra>",
                     )
                 )
 
@@ -468,6 +471,20 @@ def render_dashboard():
                 yref="paper",
                 showarrow=False,
             )
+
+        # -----------------------------------------------------
+        # RED DOTTED ZERO-LEVEL REFERENCE LINE FOR COI
+        # Applies to both NIFTY and BANKNIFTY COI charts.
+        # -----------------------------------------------------
+
+        fig.add_hline(
+            y=0,
+            line_color="red",
+            line_dash="dot",
+            line_width=2,
+            annotation_text="0",
+            annotation_position="top left",
+        )
 
         # -----------------------------------------------------
         # DUAL Y-AXIS LAYOUT
@@ -484,6 +501,9 @@ def render_dashboard():
             yaxis=dict(
                 title="Cumulative COI",
                 side="left",
+                tickformat=",.3f",
+                exponentformat="none",
+                separatethousands=True,
             ),
 
             yaxis2=dict(
@@ -491,6 +511,9 @@ def render_dashboard():
                 overlaying="y",
                 side="right",
                 showgrid=False,
+                tickformat=",.3f",
+                exponentformat="none",
+                separatethousands=True,
             ),
 
             hovermode="x unified",
@@ -536,6 +559,7 @@ def render_dashboard():
                         mode="lines",
                         name="NIFTY Futures Price",
                         line=dict(width=2),
+                        hovertemplate="%{x|%H:%M:%S}<br>NIFTY Futures Price: %{y:,.3f}<extra></extra>",
                     )
                 )
                 if "vwap" in futures_hist.columns and futures_hist["vwap"].notna().any():
@@ -554,7 +578,12 @@ def render_dashboard():
                 futures_fig.update_layout(
                     height=350,
                     xaxis_title="Time (IST)",
-                    yaxis_title="Price",
+                    yaxis=dict(
+                        title="Price",
+                        tickformat=",.3f",
+                        exponentformat="none",
+                        separatethousands=True,
+                    ),
                     hovermode="x unified",
                     legend=dict(
                         orientation="h", yanchor="bottom", y=1.02,
@@ -599,14 +628,20 @@ def render_dashboard():
             go.Bar(
                 name=name,
                 x=[x],
-                y=[oi[x][s]]
+                y=[oi[x][s]],
+                hovertemplate="%{x}<br>" + name + ": %{y:,.3f}<extra></extra>",
             )
         )
 
     fig.update_layout(
         barmode="group",
         height=350,
-        yaxis_title="Open Interest",
+        yaxis=dict(
+            title="Open Interest",
+            tickformat=",.3f",
+            exponentformat="none",
+            separatethousands=True,
+        ),
         hovermode="x unified"
     )
 
@@ -666,6 +701,7 @@ def render_dashboard():
                         if orange
                         else None
                     ),
+                    hovertemplate="Strike: %{x:,.0f}<br>CE OI: %{y:,.3f}<extra></extra>",
                 )
             )
 
@@ -680,6 +716,7 @@ def render_dashboard():
                         if orange
                         else None
                     ),
+                    hovertemplate="Strike: %{x:,.0f}<br>PE OI: %{y:,.3f}<extra></extra>",
                 )
             )
 
@@ -687,7 +724,12 @@ def render_dashboard():
                 barmode="group",
                 height=350,
                 xaxis_title="Strike Price",
-                yaxis_title="Open Interest",
+                yaxis=dict(
+                    title="Open Interest",
+                    tickformat=",.3f",
+                    exponentformat="none",
+                    separatethousands=True,
+                ),
                 hovermode="x unified",
             )
 
@@ -772,7 +814,12 @@ def render_dashboard():
             fig.update_layout(
                 height=350,
                 xaxis_title="Strike Price",
-                yaxis_title="Total Pain",
+                yaxis=dict(
+                    title="Total Pain",
+                    tickformat=",.3f",
+                    exponentformat="none",
+                    separatethousands=True,
+                ),
                 hovermode="x unified",
                 margin=dict(
                     l=45,
