@@ -486,13 +486,6 @@ def render_dashboard():
 
             xaxis=dict(
                 title="Time",
-                # Compress the chart timeline outside NSE market hours.
-                # After 15:30, the next visible time is 09:15 on the next
-                # trading day; weekends are hidden as well.
-                rangebreaks=[
-                    dict(bounds=["sat", "mon"]),
-                    dict(bounds=[15.5, 9.25], pattern="hour"),
-                ],
             ),
 
             yaxis=dict(
@@ -580,15 +573,7 @@ def render_dashboard():
                 latest_futures_date = futures_hist["trading_date"].max()
                 futures_fig.update_layout(
                     height=350,
-                    xaxis=dict(
-                        title="Time (IST)",
-                        # Hide overnight hours and weekends so the next
-                        # visible session starts at 09:15 after 15:30.
-                        rangebreaks=[
-                            dict(bounds=["sat", "mon"]),
-                            dict(bounds=[15.5, 9.25], pattern="hour"),
-                        ],
-                    ),
+                    xaxis_title="Time (IST)",
                     yaxis=dict(
                         title="Price",
                         tickformat=",.3f",
@@ -661,57 +646,6 @@ def render_dashboard():
         use_container_width=True,
         key="overall_oi_chart"
     )
-
-    # =========================================================
-    # HISTORICAL OI + MAX PAIN — LATEST 125 SNAPSHOTS
-    # =========================================================
-    st.subheader("Historical OI & Max Pain — Latest 125 Observations")
-    hist_col1, hist_col2 = st.columns(2)
-
-    for hist_col, hist_symbol, hist_label in [
-        (hist_col1, "NIFTY", "NIFTY"),
-        (hist_col2, "BANKNIFTY", "BANKNIFTY"),
-    ]:
-        with hist_col:
-            metrics_hist = load_recent_chain_metrics(hist_symbol, limit=125)
-            st.caption(f"{hist_label}: historical totals and Max Pain from saved snapshots")
-            if metrics_hist.empty:
-                st.info(f"No historical snapshots available for {hist_label}.")
-            else:
-                hist_fig = go.Figure()
-                hist_fig.add_trace(go.Scatter(
-                    x=metrics_hist["timestamp"], y=metrics_hist["ce_oi"],
-                    mode="lines", name=f"{hist_label} CE OI",
-                    hovertemplate="%{x|%d-%b %H:%M}<br>CE OI: %{y:,.3f}<extra></extra>",
-                ))
-                hist_fig.add_trace(go.Scatter(
-                    x=metrics_hist["timestamp"], y=metrics_hist["pe_oi"],
-                    mode="lines", name=f"{hist_label} PE OI",
-                    hovertemplate="%{x|%d-%b %H:%M}<br>PE OI: %{y:,.3f}<extra></extra>",
-                ))
-                hist_fig.update_layout(
-                    height=330, xaxis_title="Date / Time",
-                    yaxis=dict(title="Open Interest", tickformat=",.3f",
-                               exponentformat="none", separatethousands=True),
-                    hovermode="x unified",
-                )
-                st.plotly_chart(hist_fig, use_container_width=True,
-                                key=f"historical_oi_{hist_symbol}")
-
-                pain_fig = go.Figure()
-                pain_fig.add_trace(go.Scatter(
-                    x=metrics_hist["timestamp"], y=metrics_hist["max_pain"],
-                    mode="lines+markers", name=f"{hist_label} Max Pain",
-                    hovertemplate="%{x|%d-%b %H:%M}<br>Max Pain: %{y:,.3f}<extra></extra>",
-                ))
-                pain_fig.update_layout(
-                    height=280, xaxis_title="Date / Time",
-                    yaxis=dict(title="Max Pain Strike", tickformat=",.3f",
-                               exponentformat="none", separatethousands=True),
-                    hovermode="x unified",
-                )
-                st.plotly_chart(pain_fig, use_container_width=True,
-                                key=f"historical_max_pain_{hist_symbol}")
 
     # =========================================================
     # 5 & 6. STRIKE PRICE-WISE OI — SIDE BY SIDE
