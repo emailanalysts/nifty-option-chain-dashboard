@@ -580,7 +580,15 @@ def render_dashboard():
                 latest_futures_date = futures_hist["trading_date"].max()
                 futures_fig.update_layout(
                     height=350,
-                    xaxis_title="Time (IST)",
+                    xaxis=dict(
+                        title="Time (IST)",
+                        # Hide overnight hours and weekends so the next
+                        # visible session starts at 09:15 after 15:30.
+                        rangebreaks=[
+                            dict(bounds=["sat", "mon"]),
+                            dict(bounds=[15.5, 9.25], pattern="hour"),
+                        ],
+                    ),
                     yaxis=dict(
                         title="Price",
                         tickformat=",.3f",
