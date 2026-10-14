@@ -90,6 +90,146 @@ def _read_df(sql, params):
     with _connect() as con:
         return pd.read_sql_query(sql, con, params=params)
 
+def load_recent_intraday_history(symbol, limit=125):
+    """
+    Load the latest N stored option-chain snapshots across trading sessions.
+    Cumulative COI remains the stored per-session value; timestamps preserve
+    trading-session boundaries on the x-axis.
+    """
+    limit = max(1, min(int(limit), 1000))
+    df = _read_df(
+        """
+        SELECT
+            snapshot_time AS timestamp,
+            trading_date,
+            symbol,
+            expiry_date AS expiry,
+            spot,
+            cumulative_coi,
+            chain_data
+        FROM option_chain_snapshots
+        WHERE symbol=%s
+        ORDER BY snapshot_time DESC
+        LIMIT %s
+        """,
+        (symbol, limit),
+    )
+
+    if df.empty:
+        return df
+
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert(IST)
+    df = df.sort_values("timestamp").reset_index(drop=True)
+
+    ce_oi_values = []
+    pe_oi_values = []
+    for chain_data in df["chain_data"]:
+        records = chain_data or []
+        if isinstance(records, dict):
+            if isinstance(records.get("data"), list):
+                records = records["data"]
+            elif isinstance(records.get("records"), dict):
+                records = records["records"].get("data", [])
+            elif isinstance(records.get("filtered"), dict):
+                records = records["filtered"].get("data", [])
+            else:
+                records = []
+
+        ce_total = 0.0
+        pe_total = 0.0
+        for row in records:
+            if not isinstance(row, dict):
+                continue
+            try:
+                ce_total += float(row.get("CE_OI", 0) or 0)
+            except (TypeError, ValueError):
+                pass
+            try:
+                pe_total += float(row.get("PE_OI", 0) or 0)
+            except (TypeError, ValueError):
+                pass
+        ce_oi_values.append(ce_total)
+        pe_oi_values.append(pe_total)
+
+    df["ce_oi"] = ce_oi_values
+    df["pe_oi"] = pe_oi_values
+    return df[[
+        "timestamp", "trading_date", "symbol", "expiry", "spot",
+        "cumulative_coi", "ce_oi", "pe_oi", "chain_data"
+    ]]
+
+
+def load_recent_chain_metrics(symbol, limit=125):
+    """Historical total OI and Max Pain derived from each saved option-chain snapshot."""
+    hist = load_recent_intraday_history(symbol, limit=limit)
+    if hist.empty:
+        return pd.DataFrame()
+
+    rows = []
+    for _, snap in hist.iterrows():
+        raw = snap.get("chain_data") or []
+        if isinstance(raw, dict):
+            if isinstance(raw.get("data"), list):
+                raw = raw["data"]
+            elif isinstance(raw.get("records"), dict):
+                raw = raw["records"].get("data", [])
+            elif isinstance(raw.get("filtered"), dict):
+                raw = raw["filtered"].get("data", [])
+            else:
+                raw = []
+        chain = pd.DataFrame(raw)
+        if chain.empty:
+            continue
+        chain = prepare_chain(chain, symbol)
+        try:
+            mp = max_pain(chain)
+        except Exception:
+            mp = float("nan")
+        rows.append({
+            "timestamp": snap["timestamp"],
+            "trading_date": snap["trading_date"],
+            "cumulative_coi": float(snap["cumulative_coi"] or 0),
+            "ce_oi": float(snap["ce_oi"] or 0),
+            "pe_oi": float(snap["pe_oi"] or 0),
+            "max_pain": mp,
+        })
+    return pd.DataFrame(rows)
+
+
+def load_nifty_futures_history(limit=125):
+    """Load the latest stored NIFTY futures price/VWAP observations."""
+    limit = max(1, min(int(limit), 1000))
+    try:
+        df = _read_df(
+            """
+            SELECT
+                snapshot_time AS timestamp,
+                trading_date,
+                expiry_date,
+                price,
+                volume,
+                cumulative_volume,
+                vwap
+            FROM nifty_futures_snapshots
+            ORDER BY snapshot_time DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+    except Exception:
+        return pd.DataFrame()
+
+    if df.empty:
+        return df
+
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert(IST)
+    df["trading_date"] = pd.to_datetime(df["trading_date"], errors="coerce").dt.date
+    for col in ["price", "volume", "cumulative_volume", "vwap"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df.sort_values("timestamp").reset_index(drop=True)
+
+
 def load_intraday_history(symbol, trading_date=None):
     date_value = (
         pd.Timestamp(trading_date).date()
@@ -243,41 +383,6 @@ def load_latest_snapshot_on_or_before(symbol, trading_date):
     df["symbol"] = symbol
     return prepare_chain(df, symbol)
     
-
-def load_nifty_futures_history(trading_date=None):
-    """Load NIFTY futures price/VWAP observations from Supabase."""
-    if trading_date:
-        date_value = pd.Timestamp(trading_date).date()
-        sql = """
-            SELECT snapshot_time AS timestamp, trading_date,
-                   expiry_date AS expiry, price, volume, cumulative_volume, vwap
-            FROM nifty_futures_snapshots
-            WHERE trading_date = %s
-            ORDER BY snapshot_time
-        """
-        params = (date_value,)
-    else:
-        sql = """
-            SELECT snapshot_time AS timestamp, trading_date,
-                   expiry_date AS expiry, price, volume, cumulative_volume, vwap
-            FROM nifty_futures_snapshots
-            WHERE trading_date = (
-                SELECT MAX(trading_date)
-                FROM nifty_futures_snapshots
-                WHERE trading_date <= %s
-            )
-            ORDER BY snapshot_time
-        """
-        params = (datetime.now(IST).date(),)
-
-    df = _read_df(sql, params)
-    if df.empty:
-        return df
-    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert(IST)
-    for col in ["price", "volume", "cumulative_volume", "vwap"]:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-    return df
-
 # ============================================================
 # DASHBOARD AUTHENTICATION
 # ============================================================
