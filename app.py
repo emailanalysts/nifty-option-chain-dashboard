@@ -486,6 +486,11 @@ def render_dashboard():
 
             xaxis=dict(
                 title="Time",
+                # Hide non-market hours and weekends on the datetime axis.
+                rangebreaks=[
+                    dict(bounds=["sat", "mon"]),
+                    dict(bounds=[15.5, 9.25], pattern="hour"),
+                ],
             ),
 
             yaxis=dict(
@@ -573,7 +578,14 @@ def render_dashboard():
                 latest_futures_date = futures_hist["trading_date"].max()
                 futures_fig.update_layout(
                     height=350,
-                    xaxis_title="Time (IST)",
+                    xaxis=dict(
+                        title="Time (IST)",
+                        # Hide non-market hours and weekends.
+                        rangebreaks=[
+                            dict(bounds=["sat", "mon"]),
+                            dict(bounds=[15.5, 9.25], pattern="hour"),
+                        ],
+                    ),
                     yaxis=dict(
                         title="Price",
                         tickformat=",.3f",
