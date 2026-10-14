@@ -1,138 +1,891 @@
-import json
-import os
-import sys
-from datetime import datetime, time as dt_time
+import pandas as pd
+import numpy as np
+import streamlit as st
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
-import pandas as pd
-import psycopg2
-from psycopg2.extras import Json
-
-from nse_data import fetch_option_chain
-from calculations import prepare_chain
+import hashlib
+import hmac
+import secrets
+import uuid
 
 IST = ZoneInfo("Asia/Kolkata")
-MARKET_OPEN = dt_time(9, 15)
-MARKET_CLOSE = dt_time(15, 30)
 
+def _db_url():
+    return st.secrets["connections"]["postgresql"]["url"]
 
-def db_url():
-    url = os.environ.get("SUPABASE_DB_URL")
-    if not url:
-        raise RuntimeError("SUPABASE_DB_URL environment variable is not set")
-    return url
+def _connect():
+    import psycopg2
+    return psycopg2.connect(_db_url(), connect_timeout=10)
 
+def database_status():
+    """Return a safe, non-secret Supabase connectivity summary for the UI."""
+    try:
+        with _connect() as con:
+            with con.cursor() as cur:
+                cur.execute("SELECT COUNT(*), MAX(snapshot_time) FROM option_chain_snapshots")
+                count, latest = cur.fetchone()
+        latest_text = None
+        if latest is not None:
+            latest_ts = pd.Timestamp(latest)
+            if latest_ts.tzinfo is None:
+                latest_ts = latest_ts.tz_localize("UTC")
+            latest_text = latest_ts.tz_convert(IST).strftime("%d-%b-%Y %H:%M:%S IST")
+        return {"connected": True, "count": int(count or 0), "latest": latest_text, "error": None}
+    except Exception as e:
+        return {"connected": False, "count": 0, "latest": None, "error": str(e)}
 
-def connect():
-    return psycopg2.connect(db_url(), connect_timeout=15)
+def prepare_chain(df, symbol):
+    df = df.copy()
+    df["expiryDate"] = pd.to_datetime(df["expiryDate"], dayfirst=True, errors="coerce")
+    df["strikePrice"] = pd.to_numeric(df["strikePrice"], errors="coerce")
+    numeric_cols = [
+        "CE_OI", "CE_change_OI", "CE_volume", "CE_IV", "CE_Premium",
+        "PE_OI", "PE_change_OI", "PE_volume", "PE_IV", "PE_Premium",
+        "underlyingValue",
+    ]
+    for c in numeric_cols:
+        if c not in df.columns:
+            df[c] = 0
+        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+    df = df.sort_values("strikePrice").reset_index(drop=True)
+    df["symbol"] = symbol
+    return df
 
-
-def save_snapshot(df):
-    symbol = str(df["symbol"].iloc[0])
-    expiry = pd.Timestamp(df["expiryDate"].iloc[0]).date()
+def atm_strike(df):
     spot = float(df["underlyingValue"].iloc[0])
-    ce_oi = float(df["CE_OI"].sum())
-    pe_oi = float(df["PE_OI"].sum())
-    now = datetime.now(IST).replace(second=0, microsecond=0)
-    trading_date = now.date()
+    idx = (df["strikePrice"] - spot).abs().idxmin()
+    return float(df.loc[idx, "strikePrice"])
 
-    chain_records = []
-    for _, r in df.iterrows():
-        chain_records.append({
-            "strikePrice": float(r["strikePrice"]),
-            "CE_OI": float(r["CE_OI"]),
-            "CE_change_OI": float(r["CE_change_OI"]),
-            "CE_volume": float(r["CE_volume"]),
-            "CE_IV": float(r["CE_IV"]),
-            "CE_Premium": float(r["CE_Premium"]),
-            "PE_OI": float(r["PE_OI"]),
-            "PE_change_OI": float(r["PE_change_OI"]),
-            "PE_volume": float(r["PE_volume"]),
-            "PE_IV": float(r["PE_IV"]),
-            "PE_Premium": float(r["PE_Premium"]),
-            "underlyingValue": float(r["underlyingValue"]),
+def strike_wise_oi(df, window=10):
+    atm = atm_strike(df)
+    strikes = sorted(df["strikePrice"].unique())
+    nearest = min(range(len(strikes)), key=lambda i: abs(strikes[i] - atm))
+    lo = max(0, nearest - window)
+    hi = min(len(strikes), nearest + window + 1)
+    return df[df["strikePrice"].isin(strikes[lo:hi])][
+        ["strikePrice", "CE_OI", "PE_OI"]
+    ].sort_values("strikePrice")
+
+def max_pain(df, return_table=False):
+    strikes = np.sort(df["strikePrice"].unique())
+    calls = df.groupby("strikePrice")["CE_OI"].sum()
+    puts = df.groupby("strikePrice")["PE_OI"].sum()
+    pain = []
+    for settlement in strikes:
+        call_pain = sum(max(0.0, settlement - k) * calls.get(k, 0) for k in strikes)
+        put_pain = sum(max(0.0, k - settlement) * puts.get(k, 0) for k in strikes)
+        pain.append((settlement, call_pain + put_pain))
+    out = pd.DataFrame(pain, columns=["strikePrice", "totalPain"])
+    mp = float(out.loc[out["totalPain"].idxmin(), "strikePrice"])
+    return (mp, out) if return_table else mp
+
+def overall_oi(nifty, bank):
+    return {
+        "NIFTY": {"CE": int(nifty["CE_OI"].sum()), "PE": int(nifty["PE_OI"].sum())},
+        "BANKNIFTY": {"CE": int(bank["CE_OI"].sum()), "PE": int(bank["PE_OI"].sum())},
+    }
+
+def _read_df(sql, params):
+    with _connect() as con:
+        return pd.read_sql_query(sql, con, params=params)
+
+def load_recent_intraday_history(symbol, limit=125):
+    """
+    Load the latest N stored option-chain snapshots across trading sessions.
+    Cumulative COI remains the stored per-session value; timestamps preserve
+    trading-session boundaries on the x-axis.
+    """
+    limit = max(1, min(int(limit), 1000))
+    df = _read_df(
+        """
+        SELECT
+            snapshot_time AS timestamp,
+            trading_date,
+            symbol,
+            expiry_date AS expiry,
+            spot,
+            cumulative_coi,
+            chain_data
+        FROM option_chain_snapshots
+        WHERE symbol=%s
+        ORDER BY snapshot_time DESC
+        LIMIT %s
+        """,
+        (symbol, limit),
+    )
+
+    if df.empty:
+        return df
+
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert(IST)
+    df = df.sort_values("timestamp").reset_index(drop=True)
+
+    ce_oi_values = []
+    pe_oi_values = []
+    for chain_data in df["chain_data"]:
+        records = chain_data or []
+        if isinstance(records, dict):
+            if isinstance(records.get("data"), list):
+                records = records["data"]
+            elif isinstance(records.get("records"), dict):
+                records = records["records"].get("data", [])
+            elif isinstance(records.get("filtered"), dict):
+                records = records["filtered"].get("data", [])
+            else:
+                records = []
+
+        ce_total = 0.0
+        pe_total = 0.0
+        for row in records:
+            if not isinstance(row, dict):
+                continue
+            try:
+                ce_total += float(row.get("CE_OI", 0) or 0)
+            except (TypeError, ValueError):
+                pass
+            try:
+                pe_total += float(row.get("PE_OI", 0) or 0)
+            except (TypeError, ValueError):
+                pass
+        ce_oi_values.append(ce_total)
+        pe_oi_values.append(pe_total)
+
+    df["ce_oi"] = ce_oi_values
+    df["pe_oi"] = pe_oi_values
+    return df[[
+        "timestamp", "trading_date", "symbol", "expiry", "spot",
+        "cumulative_coi", "ce_oi", "pe_oi", "chain_data"
+    ]]
+
+
+def load_recent_chain_metrics(symbol, limit=125):
+    """Historical total OI and Max Pain derived from each saved option-chain snapshot."""
+    hist = load_recent_intraday_history(symbol, limit=limit)
+    if hist.empty:
+        return pd.DataFrame()
+
+    rows = []
+    for _, snap in hist.iterrows():
+        raw = snap.get("chain_data") or []
+        if isinstance(raw, dict):
+            if isinstance(raw.get("data"), list):
+                raw = raw["data"]
+            elif isinstance(raw.get("records"), dict):
+                raw = raw["records"].get("data", [])
+            elif isinstance(raw.get("filtered"), dict):
+                raw = raw["filtered"].get("data", [])
+            else:
+                raw = []
+        chain = pd.DataFrame(raw)
+        if chain.empty:
+            continue
+        chain = prepare_chain(chain, symbol)
+        try:
+            mp = max_pain(chain)
+        except Exception:
+            mp = float("nan")
+        rows.append({
+            "timestamp": snap["timestamp"],
+            "trading_date": snap["trading_date"],
+            "cumulative_coi": float(snap["cumulative_coi"] or 0),
+            "ce_oi": float(snap["ce_oi"] or 0),
+            "pe_oi": float(snap["pe_oi"] or 0),
+            "max_pain": mp,
         })
+    return pd.DataFrame(rows)
 
-    with connect() as con:
+
+def load_nifty_futures_history(limit=125):
+    """Load the latest stored NIFTY futures price/VWAP observations."""
+    limit = max(1, min(int(limit), 1000))
+    try:
+        df = _read_df(
+            """
+            SELECT
+                snapshot_time AS timestamp,
+                trading_date,
+                expiry_date,
+                price,
+                volume,
+                cumulative_volume,
+                vwap
+            FROM nifty_futures_snapshots
+            ORDER BY snapshot_time DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+    except Exception:
+        return pd.DataFrame()
+
+    if df.empty:
+        return df
+
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert(IST)
+    df["trading_date"] = pd.to_datetime(df["trading_date"], errors="coerce").dt.date
+    for col in ["price", "volume", "cumulative_volume", "vwap"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df.sort_values("timestamp").reset_index(drop=True)
+
+
+def load_intraday_history(symbol, trading_date=None):
+    date_value = (
+        pd.Timestamp(trading_date).date()
+        if trading_date
+        else datetime.now(IST).date()
+    )
+
+    df = _read_df(
+        """
+        SELECT
+            snapshot_time AS timestamp,
+            symbol,
+            expiry_date AS expiry,
+            spot,
+            cumulative_coi,
+            chain_data
+        FROM option_chain_snapshots
+        WHERE symbol=%s
+          AND trading_date=%s
+        ORDER BY snapshot_time
+        """,
+        (symbol, date_value),
+    )
+
+    if df.empty:
+        return df
+
+    # --------------------------------------------------------
+    # Convert timestamp to IST
+    # --------------------------------------------------------
+    df["timestamp"] = (
+        pd.to_datetime(df["timestamp"], utc=True)
+        .dt.tz_convert(IST)
+    )
+
+    # --------------------------------------------------------
+    # Calculate total CE OI and PE OI from chain_data
+    # for every snapshot
+    # --------------------------------------------------------
+    ce_oi_values = []
+    pe_oi_values = []
+
+    for chain_data in df["chain_data"]:
+
+        # chain_data is normally a list of option records
+        records = chain_data or []
+
+        # Safety handling in case JSON is wrapped in a dictionary
+        if isinstance(records, dict):
+
+            if isinstance(records.get("data"), list):
+                records = records["data"]
+
+            elif isinstance(records.get("records"), dict):
+                records = records["records"].get("data", [])
+
+            elif isinstance(records.get("filtered"), dict):
+                records = records["filtered"].get("data", [])
+
+            else:
+                records = []
+
+        ce_total = 0.0
+        pe_total = 0.0
+
+        for row in records:
+
+            if not isinstance(row, dict):
+                continue
+
+            ce_value = row.get("CE_OI", 0)
+            pe_value = row.get("PE_OI", 0)
+
+            try:
+                ce_total += float(ce_value or 0)
+            except (TypeError, ValueError):
+                pass
+
+            try:
+                pe_total += float(pe_value or 0)
+            except (TypeError, ValueError):
+                pass
+
+        ce_oi_values.append(ce_total)
+        pe_oi_values.append(pe_total)
+
+    df["ce_oi"] = ce_oi_values
+    df["pe_oi"] = pe_oi_values
+
+    # --------------------------------------------------------
+    # Return only the fields required by the dashboard
+    # --------------------------------------------------------
+    return df[
+        [
+            "timestamp",
+            "symbol",
+            "expiry",
+            "spot",
+            "cumulative_coi",
+            "ce_oi",
+            "pe_oi",
+        ]
+    ]
+
+def latest_saved_trading_date(symbol):
+    with _connect() as con:
+        with con.cursor() as cur:
+            cur.execute(
+                "SELECT MAX(trading_date) FROM option_chain_snapshots WHERE symbol=%s",
+                (symbol,),
+            )
+            row = cur.fetchone()
+    return row[0].isoformat() if row and row[0] else None
+
+def previous_saved_trading_date(symbol, before_date):
+    before = pd.Timestamp(before_date).date()
+    with _connect() as con:
+        with con.cursor() as cur:
+            cur.execute(
+                "SELECT MAX(trading_date) FROM option_chain_snapshots WHERE symbol=%s AND trading_date < %s",
+                (symbol, before),
+            )
+            row = cur.fetchone()
+    return row[0].isoformat() if row and row[0] else None
+
+def load_latest_snapshot_on_or_before(symbol, trading_date):
+    if not trading_date:
+        return pd.DataFrame()
+    target = pd.Timestamp(trading_date).date()
+    with _connect() as con:
         with con.cursor() as cur:
             cur.execute(
                 """
-                SELECT cumulative_coi, chain_data
+                SELECT snapshot_time, expiry_date, chain_data
                 FROM option_chain_snapshots
-                WHERE symbol=%s AND expiry_date=%s AND trading_date=%s
+                WHERE symbol=%s AND trading_date <= %s
                 ORDER BY snapshot_time DESC
                 LIMIT 1
                 """,
-                (symbol, expiry, trading_date),
+                (symbol, target),
             )
-            prev = cur.fetchone()
+            row = cur.fetchone()
+    if not row:
+        return pd.DataFrame()
+    _, expiry, chain_data = row
+    records = chain_data or []
+    if not records:
+        return pd.DataFrame()
+    df = pd.DataFrame(records)
+    df["expiryDate"] = pd.Timestamp(expiry)
+    df["symbol"] = symbol
+    return prepare_chain(df, symbol)
+    
+# ============================================================
+# DASHBOARD AUTHENTICATION
+# ============================================================
 
-            if prev is None:
-                cumulative = 0.0
-            else:
-                previous_chain = prev[1] or []
-                prev_ce = sum(float(x.get("CE_OI", 0)) for x in previous_chain)
-                prev_pe = sum(float(x.get("PE_OI", 0)) for x in previous_chain)
-                increment = (pe_oi - prev_pe) - (ce_oi - prev_ce)
-                cumulative = float(prev[0] or 0) + increment
+AUTH_ITERATIONS = 310_000
+
+
+def create_password_hash(password: str) -> str:
+    """
+    Create a salted PBKDF2-SHA256 password hash.
+
+    Stored format:
+        pbkdf2_sha256$iterations$salt$hash
+    """
+
+    if not password:
+        raise ValueError("Password cannot be empty.")
+
+    salt = secrets.token_hex(16)
+
+    derived_key = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt.encode("utf-8"),
+        AUTH_ITERATIONS,
+    )
+
+    password_hash = derived_key.hex()
+
+    return (
+        f"pbkdf2_sha256"
+        f"${AUTH_ITERATIONS}"
+        f"${salt}"
+        f"${password_hash}"
+    )
+
+
+def verify_password(
+    password: str,
+    stored_hash: str
+) -> bool:
+
+    try:
+
+        algorithm, iterations, salt, expected_hash = (
+            stored_hash.split("$")
+        )
+
+        if algorithm != "pbkdf2_sha256":
+            return False
+
+        iterations = int(iterations)
+
+        derived_key = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            salt.encode("utf-8"),
+            iterations,
+        )
+
+        actual_hash = derived_key.hex()
+
+        return hmac.compare_digest(
+            actual_hash,
+            expected_hash
+        )
+
+    except Exception:
+        return False
+
+def authenticate_dashboard_user(
+    username: str,
+    password: str
+):
+
+    username = username.strip()
+
+    if not username or not password:
+        return None
+
+    with _connect() as con:
+
+        with con.cursor() as cur:
 
             cur.execute(
                 """
-                DELETE FROM option_chain_snapshots
-                WHERE symbol=%s AND trading_date=%s AND expiry_date=%s AND snapshot_time=%s
+                SELECT
+                    username,
+                    display_name,
+                    password_hash,
+                    active
+                FROM dashboard_users
+                WHERE LOWER(username) = LOWER(%s)
+                LIMIT 1
                 """,
-                (symbol, trading_date, expiry, now),
+                (username,)
             )
+
+            row = cur.fetchone()
+
+            if not row:
+                return None
+
+            db_username = row[0]
+            display_name = row[1]
+            password_hash = row[2]
+            active = row[3]
+
+            if not active:
+                return None
+
+            if not verify_password(
+                password,
+                password_hash
+            ):
+                return None
+
             cur.execute(
                 """
-                INSERT INTO option_chain_snapshots
-                    (snapshot_time, trading_date, symbol, expiry_date, spot, cumulative_coi, chain_data)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                UPDATE dashboard_users
+                SET
+                    last_login_at = NOW(),
+                    login_count = login_count + 1
+                WHERE username = %s
                 """,
-                (now, trading_date, symbol, expiry, spot, cumulative, Json(chain_records)),
+                (db_username,)
             )
-        con.commit()
 
-    return {
-        "symbol": symbol,
-        "snapshot_time": now.isoformat(),
-        "trading_date": trading_date.isoformat(),
-        "expiry": expiry.isoformat(),
-        "spot": spot,
-        "cumulative_coi": cumulative,
-    }
+            session_id = str(uuid.uuid4())
 
-
-def main():
-    now = datetime.now(IST)
-    print(f"IST time: {now:%Y-%m-%d %H:%M:%S %Z}")
-
-    if now.weekday() >= 5:
-        print("Weekend: collector skipped.")
-        return 0
-
-    if not (MARKET_OPEN <= now.time() <= MARKET_CLOSE):
-        print("Outside 09:15–15:30 IST: collector skipped.")
-        return 0
-
-    results = []
-    for symbol in ("NIFTY", "BANKNIFTY"):
-        try:
-            raw = fetch_option_chain(symbol)
-            df = prepare_chain(raw, symbol)
-            result = save_snapshot(df)
-            results.append(result)
-            print(
-                f"Saved {symbol}: expiry={result['expiry']} "
-                f"spot={result['spot']:.2f} cumulative_coi={result['cumulative_coi']:.2f}"
+            cur.execute(
+                """
+                INSERT INTO dashboard_login_events
+                (
+                    username,
+                    event_type,
+                    session_id
+                )
+                VALUES
+                (
+                    %s,
+                    %s,
+                    %s
+                )
+                """,
+                (
+                    db_username,
+                    "LOGIN",
+                    session_id,
+                )
             )
-        except Exception as exc:
-            print(f"ERROR {symbol}: {exc}")
-            return 1
 
-    print(json.dumps(results, indent=2))
-    return 0
+            con.commit()
 
+            return {
+                "username": db_username,
+                "display_name": display_name or db_username,
+                "session_id": session_id,
+            }
 
-if __name__ == "__main__":
-    sys.exit(main())
+def authenticate_google_user(
+    email: str,
+    display_name: str = None
+):
+    """
+    Authenticate a Google/OIDC user.
+
+    - Existing active user  -> allow access and record login
+    - Existing inactive user -> deny access
+    - New Google user       -> automatically create as ACTIVE
+    """
+
+    if not email:
+        return None
+
+    email = email.strip().lower()
+
+    if not display_name:
+        display_name = email.split("@")[0]
+
+    display_name = display_name.strip()
+
+    with _connect() as con:
+
+        with con.cursor() as cur:
+
+            # ------------------------------------------------
+            # Check whether this Google email already exists
+            # ------------------------------------------------
+
+            cur.execute(
+                """
+                SELECT
+                    username,
+                    display_name,
+                    email,
+                    active
+                FROM dashboard_users
+                WHERE LOWER(email) = %s
+                LIMIT 1
+                """,
+                (email,)
+            )
+
+            row = cur.fetchone()
+
+            # =================================================
+            # EXISTING USER
+            # =================================================
+
+            if row:
+
+                username = row[0]
+                db_display_name = row[1]
+                db_email = row[2]
+                active = row[3]
+
+                # User was previously deactivated
+                if not active:
+                    return None
+
+                session_id = str(uuid.uuid4())
+
+                cur.execute(
+                    """
+                    UPDATE dashboard_users
+                    SET
+                        last_login_at = NOW(),
+                        login_count = login_count + 1
+                    WHERE username = %s
+                    """,
+                    (username,)
+                )
+
+                cur.execute(
+                    """
+                    INSERT INTO dashboard_login_events
+                    (
+                        username,
+                        event_type,
+                        session_id
+                    )
+                    VALUES
+                    (
+                        %s,
+                        %s,
+                        %s
+                    )
+                    """,
+                    (
+                        username,
+                        "GOOGLE_LOGIN",
+                        session_id
+                    )
+                )
+
+                con.commit()
+
+                return {
+                    "username": username,
+                    "display_name": db_display_name or display_name,
+                    "email": db_email,
+                    "active": True,
+                    "session_id": session_id
+                }
+
+            # =================================================
+            # NEW GOOGLE USER
+            # =================================================
+
+            username = email
+
+            # Make sure username is unique
+            cur.execute(
+                """
+                SELECT 1
+                FROM dashboard_users
+                WHERE LOWER(username) = LOWER(%s)
+                LIMIT 1
+                """,
+                (username,)
+            )
+
+            username_exists = cur.fetchone()
+
+            if username_exists:
+                username = (
+                    email
+                    + "_"
+                    + uuid.uuid4().hex[:8]
+                )
+
+            # Google users don't use the password.
+            # Generate an unusable random password hash
+            # because password_hash is NOT NULL in the table.
+            random_password = secrets.token_urlsafe(32)
+
+            password_hash = create_password_hash(
+                random_password
+            )
+
+            cur.execute(
+                """
+                INSERT INTO dashboard_users
+                (
+                    username,
+                    display_name,
+                    email,
+                    password_hash,
+                    active,
+                    last_login_at,
+                    login_count
+                )
+                VALUES
+                (
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    TRUE,
+                    NOW(),
+                    1
+                )
+                """,
+                (
+                    username,
+                    display_name,
+                    email,
+                    password_hash
+                )
+            )
+
+            session_id = str(uuid.uuid4())
+
+            cur.execute(
+                """
+                INSERT INTO dashboard_login_events
+                (
+                    username,
+                    event_type,
+                    session_id
+                )
+                VALUES
+                (
+                    %s,
+                    %s,
+                    %s
+                )
+                """,
+                (
+                    username,
+                    "GOOGLE_LOGIN",
+                    session_id
+                )
+            )
+
+            con.commit()
+
+            return {
+                "username": username,
+                "display_name": display_name,
+                "email": email,
+                "active": True,
+                "session_id": session_id
+            }
+
+def load_dashboard_users():
+    with _connect() as con:
+        return pd.read_sql_query(
+            """
+            SELECT
+                username,
+                display_name,
+                email,
+                active,
+                last_login_at,
+                created_at
+            FROM dashboard_users
+            ORDER BY created_at DESC
+            """,
+            con,
+        )
+
+def load_dashboard_login_events(limit=100):
+    with _connect() as con:
+        return pd.read_sql_query(
+            """
+            SELECT
+                username,
+                event_type,
+                event_time,
+                session_id
+            FROM dashboard_login_events
+            ORDER BY event_time DESC
+            LIMIT %s
+            """,
+            con,
+            params=(limit,),
+        )
+
+def create_dashboard_user(
+    username,
+    display_name,
+    password,
+    email=None
+):
+    """
+    Create a dashboard user.
+
+    The Google email is optional so an account can be created
+    first and linked to Google later if required.
+    """
+
+    username = username.strip()
+    display_name = display_name.strip()
+
+    if email:
+        email = email.strip().lower()
+    else:
+        email = None
+
+    if not username or not password:
+        return False, "Username and password are required."
+
+    try:
+
+        password_hash = create_password_hash(password)
+
+        with _connect() as con:
+
+            with con.cursor() as cur:
+
+                cur.execute(
+                    """
+                    INSERT INTO dashboard_users
+                    (
+                        username,
+                        display_name,
+                        email,
+                        password_hash,
+                        active
+                    )
+                    VALUES
+                    (
+                        %s,
+                        %s,
+                        %s,
+                        %s,
+                        TRUE
+                    )
+                    """,
+                    (
+                        username,
+                        display_name,
+                        email,
+                        password_hash
+                    )
+                )
+
+            con.commit()
+
+        return True, "User created successfully."
+
+    except Exception as e:
+
+        error_message = str(e)
+
+        if "duplicate" in error_message.lower():
+            return False, "Username or Google email already exists."
+
+        return False, error_message
+
+def set_dashboard_user_active(username, active):
+    username = username.strip()
+
+    if not username:
+        return False, "Username is required."
+
+    # Prevent accidental deactivation of the admin account
+    if username.lower() == "admin":
+        return False, "The admin account cannot be deactivated."
+
+    try:
+        with _connect() as con:
+            with con.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE dashboard_users
+                    SET active = %s
+                    WHERE username = %s
+                    """,
+                    (active, username),
+                )
+
+                if cur.rowcount == 0:
+                    return False, "User not found."
+
+            con.commit()
+
+        if active:
+            return True, "User activated."
+        else:
+            return True, "User deactivated."
+
+    except Exception:
+        return False, "Unable to update user status."
