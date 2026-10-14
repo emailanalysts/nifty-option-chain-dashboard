@@ -486,6 +486,13 @@ def render_dashboard():
 
             xaxis=dict(
                 title="Time",
+                # Compress the chart timeline outside NSE market hours.
+                # After 15:30, the next visible time is 09:15 on the next
+                # trading day; weekends are hidden as well.
+                rangebreaks=[
+                    dict(bounds=["sat", "mon"]),
+                    dict(bounds=[15.5, 9.25], pattern="hour"),
+                ],
             ),
 
             yaxis=dict(
