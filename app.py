@@ -561,7 +561,7 @@ def render_dashboard():
                         mode="lines",
                         name="NIFTY Futures Price",
                         line=dict(width=2),
-                        hovertemplate="%{x|%H:%M:%S}<br>NIFTY Futures Price: %{y:,.3f}<extra></extra>",
+                        hovertemplate="NIFTY Futures Price: %{y:,.0f}<extra></extra>",
                     )
                 )
                 if "vwap" in futures_hist.columns and futures_hist["vwap"].notna().any():
@@ -572,6 +572,7 @@ def render_dashboard():
                             mode="lines",
                             name="VWAP",
                             line=dict(width=2, dash="dash"),
+                            hovertemplate="VWAP: %{y:,.0f}<extra></extra>",
                         )
                     )
 
@@ -589,7 +590,7 @@ def render_dashboard():
                     ),
                     yaxis=dict(
                         title="Price",
-                        tickformat=",.3f",
+                        tickformat=",.0f",
                         exponentformat="none",
                         separatethousands=True,
                     ),
@@ -638,7 +639,7 @@ def render_dashboard():
                 name=name,
                 x=[x],
                 y=[oi[x][s]],
-                hovertemplate="%{x}<br>" + name + ": %{y:,.3f}<extra></extra>",
+                hovertemplate="%{x}<br>" + name + ": %{y:,.0f}<extra></extra>",
             )
         )
 
@@ -647,7 +648,7 @@ def render_dashboard():
         height=350,
         yaxis=dict(
             title="Open Interest",
-            tickformat=",.3f",
+            tickformat=",.0f",
             exponentformat="none",
             separatethousands=True,
         ),
@@ -710,7 +711,7 @@ def render_dashboard():
                         if orange
                         else None
                     ),
-                    hovertemplate="Strike: %{x:,.0f}<br>CE OI: %{y:,.3f}<extra></extra>",
+                    hovertemplate="Strike: %{x:,.0f}<br>CE OI: %{y:,.0f}<extra></extra>",
                 )
             )
 
@@ -725,7 +726,7 @@ def render_dashboard():
                         if orange
                         else None
                     ),
-                    hovertemplate="Strike: %{x:,.0f}<br>PE OI: %{y:,.3f}<extra></extra>",
+                    hovertemplate="Strike: %{x:,.0f}<br>PE OI: %{y:,.0f}<extra></extra>",
                 )
             )
 
@@ -735,7 +736,7 @@ def render_dashboard():
                 xaxis_title="Strike Price",
                 yaxis=dict(
                     title="Open Interest",
-                    tickformat=",.3f",
+                    tickformat=",.0f",
                     exponentformat="none",
                     separatethousands=True,
                 ),
@@ -808,7 +809,8 @@ def render_dashboard():
                 go.Bar(
                     x=pain.strikePrice,
                     y=pain.totalPain,
-                    name="Total Pain"
+                    name="Total Pain",
+                    hovertemplate="Strike: %{x:,.0f}<br>Total Pain: %{y:,.0f}<extra></extra>"
                 )
             )
 
@@ -825,7 +827,7 @@ def render_dashboard():
                 xaxis_title="Strike Price",
                 yaxis=dict(
                     title="Total Pain",
-                    tickformat=",.3f",
+                    tickformat=",.0f",
                     exponentformat="none",
                     separatethousands=True,
                 ),
