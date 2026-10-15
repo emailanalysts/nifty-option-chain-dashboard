@@ -397,7 +397,7 @@ def render_dashboard():
                     mode="lines+markers",
                     name="Cumulative COI",
                     yaxis="y",
-                    hovertemplate="%{x|%d-%b %H:%M}<br>Cumulative COI: %{y:,.3f}<extra></extra>",
+                    hovertemplate="Cumulative COI: %{y:,.0f}<extra></extra>",
                 )
             )
 
@@ -430,7 +430,7 @@ def render_dashboard():
                             color="red",
                             width=2
                         ),
-                        hovertemplate="%{x|%d-%b %H:%M}<br>" + ce_name + ": %{y:,.3f}<extra></extra>",
+                        hovertemplate=ce_name + ": %{y:,.0f}<extra></extra>",
                     )
                 )
 
@@ -448,7 +448,7 @@ def render_dashboard():
                             color="green",
                             width=2
                         ),
-                        hovertemplate="%{x|%d-%b %H:%M}<br>" + pe_name + ": %{y:,.3f}<extra></extra>",
+                        hovertemplate=pe_name + ": %{y:,.0f}<extra></extra>",
                     )
                 )
 
@@ -497,7 +497,7 @@ def render_dashboard():
             yaxis=dict(
                 title="Cumulative COI",
                 side="left",
-                tickformat=",.3f",
+                tickformat=",.0f",
                 exponentformat="none",
                 separatethousands=True,
             ),
@@ -507,12 +507,12 @@ def render_dashboard():
                 overlaying="y",
                 side="right",
                 showgrid=False,
-                tickformat=",.3f",
+                tickformat=",.0f",
                 exponentformat="none",
                 separatethousands=True,
             ),
 
-            hovermode="x unified",
+            hovermode="x",
 
             legend=dict(
                 orientation="h",
