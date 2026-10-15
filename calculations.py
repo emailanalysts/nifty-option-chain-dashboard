@@ -90,78 +90,108 @@ def _read_df(sql, params):
     with _connect() as con:
         return pd.read_sql_query(sql, con, params=params)
 
-def load_recent_intraday_history(symbol, limit=125):
-    """
-    Load the latest N stored option-chain snapshots across trading sessions.
-    Cumulative COI remains the stored per-session value; timestamps preserve
-    trading-session boundaries on the x-axis.
+@st.cache_data(ttl=240, show_spinner=False)
+def load_recent_intraday_history(symbol, limit=125, include_chain_data=False):
+    """Load recent chart points while minimizing data transferred from Supabase.
+
+    CE/PE totals are aggregated inside PostgreSQL; full chain_data is fetched only
+    when explicitly requested by the legacy historical-metrics helper.
     """
     limit = max(1, min(int(limit), 1000))
-    df = _read_df(
+    chain_select = ", chain_data" if include_chain_data else ""
+    if include_chain_data:
+        sql = f"""
+            SELECT snapshot_time AS timestamp, trading_date, symbol,
+                   expiry_date AS expiry, spot, cumulative_coi{chain_select}
+            FROM option_chain_snapshots
+            WHERE symbol=%s
+            ORDER BY snapshot_time DESC
+            LIMIT %s
         """
-        SELECT
-            snapshot_time AS timestamp,
-            trading_date,
-            symbol,
-            expiry_date AS expiry,
-            spot,
-            cumulative_coi,
-            chain_data
-        FROM option_chain_snapshots
-        WHERE symbol=%s
-        ORDER BY snapshot_time DESC
-        LIMIT %s
-        """,
-        (symbol, limit),
-    )
-
+    else:
+        # Support the known JSONB layouts: array, {data:[...]},
+        # {records:{data:[...]}} and {filtered:{data:[...]}}.
+        sql = """
+            SELECT s.snapshot_time AS timestamp, s.trading_date, s.symbol,
+                   s.expiry_date AS expiry, s.spot, s.cumulative_coi,
+                   COALESCE(SUM(
+                     CASE WHEN (item->>'CE_OI') ~ '^-?[0-9]+(\.[0-9]+)?$'
+                          THEN (item->>'CE_OI')::numeric ELSE 0 END
+                   ), 0)::double precision AS ce_oi,
+                   COALESCE(SUM(
+                     CASE WHEN (item->>'PE_OI') ~ '^-?[0-9]+(\.[0-9]+)?$'
+                          THEN (item->>'PE_OI')::numeric ELSE 0 END
+                   ), 0)::double precision AS pe_oi
+            FROM (
+                SELECT snapshot_time, trading_date, symbol, expiry_date,
+                       spot, cumulative_coi, chain_data
+                FROM option_chain_snapshots
+                WHERE symbol=%s
+                ORDER BY snapshot_time DESC
+                LIMIT %s
+            ) AS s
+            LEFT JOIN LATERAL jsonb_array_elements(
+                CASE
+                  WHEN jsonb_typeof(s.chain_data::jsonb) = 'array' THEN s.chain_data
+                  WHEN jsonb_typeof(s.chain_data::jsonb) = 'object'
+                       AND jsonb_typeof((s.chain_data::jsonb)->'data') = 'array'
+                    THEN (s.chain_data::jsonb)->'data'
+                  WHEN jsonb_typeof(s.chain_data::jsonb) = 'object'
+                       AND jsonb_typeof((s.chain_data::jsonb)->'records') = 'object'
+                       AND jsonb_typeof((s.chain_data::jsonb)->'records'->'data') = 'array'
+                    THEN (s.chain_data::jsonb)->'records'->'data'
+                  WHEN jsonb_typeof(s.chain_data::jsonb) = 'object'
+                       AND jsonb_typeof((s.chain_data::jsonb)->'filtered') = 'object'
+                       AND jsonb_typeof((s.chain_data::jsonb)->'filtered'->'data') = 'array'
+                    THEN (s.chain_data::jsonb)->'filtered'->'data'
+                  ELSE '[]'::jsonb
+                END
+            ) AS expanded(item) ON TRUE
+            GROUP BY s.snapshot_time, s.trading_date, s.symbol,
+                     s.expiry_date, s.spot, s.cumulative_coi
+            ORDER BY s.snapshot_time ASC
+        """
+    df = _read_df(sql, (symbol, limit))
     if df.empty:
         return df
-
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert(IST)
     df = df.sort_values("timestamp").reset_index(drop=True)
-
-    ce_oi_values = []
-    pe_oi_values = []
-    for chain_data in df["chain_data"]:
-        records = chain_data or []
-        if isinstance(records, dict):
-            if isinstance(records.get("data"), list):
-                records = records["data"]
-            elif isinstance(records.get("records"), dict):
-                records = records["records"].get("data", [])
-            elif isinstance(records.get("filtered"), dict):
-                records = records["filtered"].get("data", [])
-            else:
-                records = []
-
-        ce_total = 0.0
-        pe_total = 0.0
-        for row in records:
-            if not isinstance(row, dict):
-                continue
-            try:
-                ce_total += float(row.get("CE_OI", 0) or 0)
-            except (TypeError, ValueError):
-                pass
-            try:
-                pe_total += float(row.get("PE_OI", 0) or 0)
-            except (TypeError, ValueError):
-                pass
-        ce_oi_values.append(ce_total)
-        pe_oi_values.append(pe_total)
-
-    df["ce_oi"] = ce_oi_values
-    df["pe_oi"] = pe_oi_values
-    return df[[
-        "timestamp", "trading_date", "symbol", "expiry", "spot",
-        "cumulative_coi", "ce_oi", "pe_oi", "chain_data"
-    ]]
+    if include_chain_data:
+        ce_oi_values, pe_oi_values = [], []
+        for chain_data in df["chain_data"]:
+            records = chain_data or []
+            if isinstance(records, dict):
+                if isinstance(records.get("data"), list):
+                    records = records["data"]
+                elif isinstance(records.get("records"), dict):
+                    records = records["records"].get("data", [])
+                elif isinstance(records.get("filtered"), dict):
+                    records = records["filtered"].get("data", [])
+                else:
+                    records = []
+            ce_total = pe_total = 0.0
+            for row in records:
+                if not isinstance(row, dict):
+                    continue
+                try:
+                    ce_total += float(row.get("CE_OI", 0) or 0)
+                except (TypeError, ValueError):
+                    pass
+                try:
+                    pe_total += float(row.get("PE_OI", 0) or 0)
+                except (TypeError, ValueError):
+                    pass
+            ce_oi_values.append(ce_total)
+            pe_oi_values.append(pe_total)
+        df["ce_oi"] = ce_oi_values
+        df["pe_oi"] = pe_oi_values
+    return df
 
 
+@st.cache_data(ttl=240, show_spinner=False)
 def load_recent_chain_metrics(symbol, limit=125):
     """Historical total OI and Max Pain derived from each saved option-chain snapshot."""
-    hist = load_recent_intraday_history(symbol, limit=limit)
+    hist = load_recent_intraday_history(symbol, limit=limit, include_chain_data=True)
     if hist.empty:
         return pd.DataFrame()
 
@@ -196,6 +226,7 @@ def load_recent_chain_metrics(symbol, limit=125):
     return pd.DataFrame(rows)
 
 
+@st.cache_data(ttl=240, show_spinner=False)
 def load_nifty_futures_history(limit=125):
     """Load the latest stored NIFTY futures price/VWAP observations."""
     limit = max(1, min(int(limit), 1000))
@@ -230,6 +261,7 @@ def load_nifty_futures_history(limit=125):
     return df.sort_values("timestamp").reset_index(drop=True)
 
 
+@st.cache_data(ttl=240, show_spinner=False)
 def load_intraday_history(symbol, trading_date=None):
     date_value = (
         pd.Timestamp(trading_date).date()
@@ -334,6 +366,7 @@ def load_intraday_history(symbol, trading_date=None):
         ]
     ]
 
+@st.cache_data(ttl=240, show_spinner=False)
 def latest_saved_trading_date(symbol):
     with _connect() as con:
         with con.cursor() as cur:
@@ -344,6 +377,7 @@ def latest_saved_trading_date(symbol):
             row = cur.fetchone()
     return row[0].isoformat() if row and row[0] else None
 
+@st.cache_data(ttl=240, show_spinner=False)
 def previous_saved_trading_date(symbol, before_date):
     before = pd.Timestamp(before_date).date()
     with _connect() as con:
@@ -355,6 +389,7 @@ def previous_saved_trading_date(symbol, before_date):
             row = cur.fetchone()
     return row[0].isoformat() if row and row[0] else None
 
+@st.cache_data(ttl=240, show_spinner=False)
 def load_latest_snapshot_on_or_before(symbol, trading_date):
     if not trading_date:
         return pd.DataFrame()
