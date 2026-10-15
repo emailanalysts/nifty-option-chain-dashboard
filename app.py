@@ -141,10 +141,11 @@ def snapshot_age_minutes(symbol, now):
     if not target:
         return None
 
-    hist = load_intraday_history(
-        symbol,
-        target
-    )
+    # Only the latest saved point is needed to calculate collector freshness.
+    # Avoid downloading and parsing every full option-chain record for the day.
+    hist = load_recent_intraday_history(symbol, limit=1)
+    if not hist.empty:
+        hist = hist[hist["trading_date"].astype(str) == str(target)]
 
     if hist.empty:
         return None
