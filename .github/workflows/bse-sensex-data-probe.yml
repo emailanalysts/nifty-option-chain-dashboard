@@ -1,7 +1,12 @@
-name: BSE SENSEX Data Probe
+name: BSE SENSEX Option Chain Probe
 
 on:
   workflow_dispatch:
+    inputs:
+      expiry:
+        description: "Expiry exactly as shown on BSE (e.g. 22 Oct 2026)"
+        required: true
+        default: "22 Oct 2026"
 
 permissions:
   contents: read
@@ -16,8 +21,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      - name: Install diagnostic dependency
-        run: python -m pip install --disable-pip-version-check requests
-      - name: Probe public BSE endpoints
+          python-version: "3.12"
+      - name: Install dependency
+        run: python -m pip install requests
+      - name: Probe BSE option chain (read-only)
+        env:
+          BSE_EXPIRY: ${{ inputs.expiry }}
         run: python bse_sensex_probe.py
