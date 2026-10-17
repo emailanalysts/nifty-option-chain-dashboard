@@ -1,4 +1,3 @@
-```yaml
 name: BSE SENSEX Browser Probe
 
 on:
@@ -51,4 +50,3 @@ jobs:
           path: sensex_browser_probe.json
           if-no-files-found: ignore
           retention-days: 3
-```
