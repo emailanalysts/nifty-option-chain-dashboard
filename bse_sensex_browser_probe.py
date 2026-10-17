@@ -6,8 +6,7 @@ from zoneinfo import ZoneInfo
 from playwright.sync_api import sync_playwright
 
 PAGE = (
-    "https://www.bseindia.com/markets/Derivatives/"
-    "DeriReports/DeriOptionChain.aspx"
+    "https://www.bseindia.com/markets/Derivatives/DeriReports/DeriOptionChain.html"
 )
 
 EXPIRY = os.getenv("BSE_EXPIRY", "22 Oct 2026")
