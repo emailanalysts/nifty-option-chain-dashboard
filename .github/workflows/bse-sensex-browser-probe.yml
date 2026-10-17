@@ -1,0 +1,36 @@
+name: BSE SENSEX Browser Probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Playwright
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Capture official BSE option-chain response
+        env:
+          BSE_EXPIRY: '22 Oct 2026'
+        run: python bse_sensex_browser_probe.py
+      - name: Upload captured JSON (if available)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sensex-browser-probe
+          path: sensex_browser_probe.json
+          if-no-files-found: ignore
+          retention-days: 3
