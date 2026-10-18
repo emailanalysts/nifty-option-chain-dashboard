@@ -261,6 +261,58 @@ def load_nifty_futures_history(limit=125):
     return df.sort_values("timestamp").reset_index(drop=True)
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def load_sensex_option_history(limit=125):
+    """Load recent SENSEX spot/COI/CE-PE OI snapshots."""
+    limit = max(1, min(int(limit), 1000))
+    try:
+        df = _read_df(
+            """
+            SELECT snapshot_time AS timestamp, trading_date, spot,
+                   cumulative_coi, ce_oi, pe_oi, expiry_date
+            FROM sensex_option_snapshots
+            ORDER BY snapshot_time DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+    except Exception:
+        return pd.DataFrame()
+    if df.empty:
+        return df
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert(IST)
+    df["trading_date"] = pd.to_datetime(df["trading_date"], errors="coerce").dt.date
+    for col in ["spot", "cumulative_coi", "ce_oi", "pe_oi"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df.sort_values("timestamp").reset_index(drop=True)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def load_sensex_futures_history(limit=125):
+    """Load recent SENSEX futures price/VWAP snapshots."""
+    limit = max(1, min(int(limit), 1000))
+    try:
+        df = _read_df(
+            """
+            SELECT snapshot_time AS timestamp, trading_date, expiry_date,
+                   contract_symbol, price, volume, cumulative_volume, vwap
+            FROM sensex_futures_snapshots
+            ORDER BY snapshot_time DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+    except Exception:
+        return pd.DataFrame()
+    if df.empty:
+        return df
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert(IST)
+    df["trading_date"] = pd.to_datetime(df["trading_date"], errors="coerce").dt.date
+    for col in ["price", "volume", "cumulative_volume", "vwap"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df.sort_values("timestamp").reset_index(drop=True)
+
+
 @st.cache_data(ttl=240, show_spinner=False)
 def load_intraday_history(symbol, trading_date=None):
     date_value = (
