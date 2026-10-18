@@ -14,6 +14,8 @@ from calculations import (
     load_recent_intraday_history,
     load_recent_chain_metrics,
     load_nifty_futures_history,
+    load_sensex_option_history,
+    load_sensex_futures_history,
     latest_saved_trading_date,
     previous_saved_trading_date,
     load_latest_snapshot_on_or_before,
@@ -610,6 +612,113 @@ def render_dashboard():
                     use_container_width=True,
                     key="nifty_futures_price_vwap_chart",
                 )
+
+
+    # =========================================================
+    # SENSEX SPOT + COI (FYERS)
+    # =========================================================
+    sensex_hist = load_sensex_option_history(limit=125)
+    if not sensex_hist.empty:
+        latest_sensex = sensex_hist.iloc[-1]
+        spot_value = pd.to_numeric(latest_sensex.get("spot"), errors="coerce")
+        metric_col, info_col = st.columns([1, 3])
+        with metric_col:
+            st.metric("SENSEX Spot", f"{spot_value:,.2f}" if pd.notna(spot_value) else "—")
+        with info_col:
+            st.caption(
+                "FYERS SENSEX data · latest snapshot: "
+                + latest_sensex["timestamp"].strftime("%d-%b-%Y %H:%M IST")
+            )
+    else:
+        st.metric("SENSEX Spot", "—")
+        st.caption("SENSEX spot appears after the FYERS collector saves its first snapshot.")
+
+    st.subheader("SENSEX Change in OI")
+    sensex_coi_fig = go.Figure()
+    if not sensex_hist.empty:
+        sensex_coi_fig.add_trace(
+            go.Scatter(
+                x=sensex_hist["timestamp"], y=sensex_hist["cumulative_coi"],
+                mode="lines+markers", name="Cumulative COI", yaxis="y",
+                hovertemplate="Cumulative COI: %{y:,.0f}<extra></extra>",
+            )
+        )
+        sensex_coi_fig.add_trace(
+            go.Scatter(
+                x=sensex_hist["timestamp"], y=sensex_hist["ce_oi"],
+                mode="lines", name="SENSEX CE OI", yaxis="y2",
+                line=dict(color="red", width=2),
+                hovertemplate="SENSEX CE OI: %{y:,.0f}<extra></extra>",
+            )
+        )
+        sensex_coi_fig.add_trace(
+            go.Scatter(
+                x=sensex_hist["timestamp"], y=sensex_hist["pe_oi"],
+                mode="lines", name="SENSEX PE OI", yaxis="y2",
+                line=dict(color="green", width=2),
+                hovertemplate="SENSEX PE OI: %{y:,.0f}<extra></extra>",
+            )
+        )
+    else:
+        sensex_coi_fig.add_annotation(
+            text="No SENSEX intraday history available yet.", x=0.5, y=0.5,
+            xref="paper", yref="paper", showarrow=False,
+        )
+    sensex_coi_fig.add_hline(
+        y=0, line_color="red", line_dash="dot", line_width=2,
+        annotation_text="0", annotation_position="top left",
+    )
+    sensex_coi_fig.update_layout(
+        height=400,
+        xaxis=dict(title="Time", rangebreaks=[dict(bounds=["sat", "mon"]), dict(bounds=[15.5, 9.25], pattern="hour")]),
+        yaxis=dict(title="Cumulative COI", side="left", tickformat=",.0f", exponentformat="none", separatethousands=True),
+        yaxis2=dict(title="Open Interest", overlaying="y", side="right", showgrid=False, tickformat=",.0f", exponentformat="none", separatethousands=True),
+        hovermode="x",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+    )
+    st.plotly_chart(sensex_coi_fig, use_container_width=True, key="sensex_coi_chart")
+
+    # =========================================================
+    # SENSEX FUTURES PRICE & VWAP
+    # =========================================================
+    st.subheader("SENSEX Futures Price & VWAP")
+    sensex_futures_hist = load_sensex_futures_history(limit=125)
+    if sensex_futures_hist.empty:
+        st.info(
+            "No saved SENSEX futures price/VWAP history is available yet. "
+            "Run the FYERS SENSEX collector after setting up the Supabase tables and GitHub secrets."
+        )
+    else:
+        sensex_futures_fig = go.Figure()
+        sensex_futures_fig.add_trace(
+            go.Scatter(
+                x=sensex_futures_hist["timestamp"], y=sensex_futures_hist["price"],
+                mode="lines", name="SENSEX Futures Price", line=dict(width=2),
+                hovertemplate="SENSEX Futures Price: %{y:,.2f}<extra></extra>",
+            )
+        )
+        if sensex_futures_hist["vwap"].notna().any():
+            sensex_futures_fig.add_trace(
+                go.Scatter(
+                    x=sensex_futures_hist["timestamp"], y=sensex_futures_hist["vwap"],
+                    mode="lines", name="VWAP", line=dict(width=2, dash="dash"),
+                    hovertemplate="VWAP: %{y:,.2f}<extra></extra>",
+                )
+            )
+        latest_fut = sensex_futures_hist.iloc[-1]
+        sensex_futures_fig.update_layout(
+            height=350,
+            xaxis=dict(title="Time (IST)", rangebreaks=[dict(bounds=["sat", "mon"]), dict(bounds=[15.5, 9.25], pattern="hour")]),
+            yaxis=dict(title="Price", tickformat=",.2f", exponentformat="none", separatethousands=True),
+            hovermode="x unified",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+            margin=dict(l=45, r=20, t=40, b=45),
+        )
+        st.caption(
+            f"Contract: {latest_fut['contract_symbol']} · expiry: {latest_fut['expiry_date']} · "
+            f"latest observation: {latest_fut['timestamp'].strftime('%d-%b-%Y %H:%M IST')}."
+        )
+        st.plotly_chart(sensex_futures_fig, use_container_width=True, key="sensex_futures_price_vwap_chart")
 
 
         # =========================================================
