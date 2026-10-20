@@ -30,8 +30,21 @@ try:
         timeout=30,
     )
 
-    response.raise_for_status()
-    result = response.json()
+    print("FYERS refresh HTTP status:", response.status_code)
+
+    try:
+        result = response.json()
+    except ValueError:
+        print("FYERS returned a non-JSON response.")
+        print("Response preview:", response.text[:500])
+        sys.exit(1)
+    
+    if response.status_code >= 400:
+        print("FYERS rejected the refresh request.")
+        print("FYERS status:", result.get("s"))
+        print("FYERS code:", result.get("code"))
+        print("FYERS message:", result.get("message"))
+        sys.exit(1)
 
     if result.get("s") != "ok" or not result.get("access_token"):
         print("FYERS token refresh failed.")
