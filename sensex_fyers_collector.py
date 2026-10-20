@@ -93,7 +93,7 @@ def fetch_optionchain(api):
 
 
 def fetch_front_future(api):
-    response = api.futureschain(data={"symbol": UNDERLYING})
+    response = api.futures_chain(data={"symbol": UNDERLYING})
     if not isinstance(response, dict) or response.get("s") != "ok":
         raise RuntimeError(f"FYERS futures-chain request failed: {response}")
     contracts = response.get("data") or []
@@ -126,8 +126,8 @@ def fetch_front_future(api):
     if not isinstance(quote_response, dict) or quote_response.get("s") != "ok":
         raise RuntimeError(f"FYERS futures quote request failed for {symbol}: {quote_response}")
     quote = next((x.get("v", {}) for x in quote_response.get("d", []) if x.get("s") == "ok"), {})
-    price = number(quote.get("lp"), number(chain_item.get("ltp")))
-    volume = number(quote.get("volume"))
+    price = number(quote.get("lp"), number(chain_item.get("lp"), number(chain_item.get("ltp"))))
+    volume = number(quote.get("volume"), number(chain_item.get("volume")))
     if price is None:
         raise RuntimeError(f"No last traded price returned for SENSEX future {symbol}")
     return {"symbol": symbol, "expiry_date": expiry_date, "price": float(price),
@@ -203,11 +203,34 @@ def main():
         print("Outside market hours or weekend; skipping.")
         return
     api = client()
-    option_record = fetch_optionchain(api)
-    future_record = fetch_front_future(api)
-    save_option_snapshot(option_record, now)
-    save_futures_snapshot(future_record, now)
-    print("SENSEX collector completed.")
+    errors = []
+
+    # Save option-chain data independently. A futures API failure must not
+    # prevent the SENSEX spot/COI chart from receiving snapshots.
+    try:
+        print("Fetching SENSEX option chain...", flush=True)
+        option_record = fetch_optionchain(api)
+        save_option_snapshot(option_record, now)
+    except Exception as exc:
+        message = f"SENSEX option-chain collection failed: {type(exc).__name__}: {exc}"
+        errors.append(message)
+        print(message, file=sys.stderr, flush=True)
+
+    # Futures are fetched and saved independently so any failure is visible
+    # in Actions logs while option-chain snapshots can still be retained.
+    try:
+        print("Fetching SENSEX futures chain...", flush=True)
+        future_record = fetch_front_future(api)
+        save_futures_snapshot(future_record, now)
+    except Exception as exc:
+        message = f"SENSEX futures collection failed: {type(exc).__name__}: {exc}"
+        errors.append(message)
+        print(message, file=sys.stderr, flush=True)
+
+    if errors:
+        raise RuntimeError(" | ".join(errors))
+
+    print("SENSEX collector completed: option-chain and futures snapshots saved.", flush=True)
 
 if __name__ == "__main__":
     try:
