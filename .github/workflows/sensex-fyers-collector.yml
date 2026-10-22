@@ -1,12 +1,19 @@
+```yaml
 name: SENSEX FYERS Collector
 
 on:
+  # Allow manual execution from GitHub Actions
   workflow_dispatch:
+
+  # Scheduled collection during BSE/NSE market hours
   schedule:
-    # GitHub Actions scheduled workflows have a 5-minute minimum interval.
-    # These UTC windows cover approximately 09:15-15:30 IST on weekdays.
+    # 09:15, 09:20, 09:25 IST
     - cron: "45,50,55 3 * * 1-5"
+
+    # Every 5 minutes from 09:30 to 15:25 IST
     - cron: "*/5 4-9 * * 1-5"
+
+    # 15:30, 15:35, 15:40 IST
     - cron: "0,5,10 10 * * 1-5"
 
 permissions:
@@ -18,34 +25,33 @@ concurrency:
 
 jobs:
   collect-sensex:
+    name: Collect SENSEX snapshots from FYERS
     runs-on: ubuntu-latest
     timeout-minutes: 5
+
     steps:
+      # 1. Download repository code
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. Configure Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
 
+      # 3. Install dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install requests
 
-      - name: Refresh FYERS access token
-        env:
-          FYERS_APP_ID: ${{ secrets.FYERS_APP_ID }}
-          FYERS_APP_SECRET: ${{ secrets.FYERS_APP_SECRET }}
-          FYERS_REFRESH_TOKEN: ${{ secrets.FYERS_REFRESH_TOKEN }}
-          FYERS_PIN: ${{ secrets.FYERS_PIN }}
-        run: python refresh_fyers_token.py
-
+      # 4. Collect SENSEX option-chain and futures data
       - name: Collect SENSEX snapshots from FYERS
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           FYERS_APP_ID: ${{ secrets.FYERS_APP_ID }}
-          FYERS_ACCESS_TOKEN: ${{ env.FYERS_ACCESS_TOKEN }}
+          FYERS_ACCESS_TOKEN: ${{ secrets.FYERS_ACCESS_TOKEN }}
         run: python sensex_fyers_collector.py
+```
