@@ -263,7 +263,7 @@ def load_nifty_futures_history(limit=125):
 
 @st.cache_data(ttl=60, show_spinner=False)
 def load_sensex_option_history(limit=125):
-    """Load recent SENSEX spot/COI/CE-PE OI snapshots."""
+    """Load the latest SENSEX trading session's spot/COI/CE-PE OI snapshots."""
     limit = max(1, min(int(limit), 1000))
     try:
         df = _read_df(
@@ -271,6 +271,9 @@ def load_sensex_option_history(limit=125):
             SELECT snapshot_time AS timestamp, trading_date, spot,
                    cumulative_coi, ce_oi, pe_oi, expiry_date
             FROM sensex_option_snapshots
+            WHERE trading_date = (
+                SELECT MAX(trading_date) FROM sensex_option_snapshots
+            )
             ORDER BY snapshot_time DESC
             LIMIT %s
             """,
@@ -289,7 +292,7 @@ def load_sensex_option_history(limit=125):
 
 @st.cache_data(ttl=60, show_spinner=False)
 def load_sensex_futures_history(limit=125):
-    """Load recent SENSEX futures price/VWAP snapshots."""
+    """Load the latest SENSEX trading session's futures price/VWAP snapshots."""
     limit = max(1, min(int(limit), 1000))
     try:
         df = _read_df(
@@ -297,6 +300,9 @@ def load_sensex_futures_history(limit=125):
             SELECT snapshot_time AS timestamp, trading_date, expiry_date,
                    contract_symbol, price, volume, cumulative_volume, vwap
             FROM sensex_futures_snapshots
+            WHERE trading_date = (
+                SELECT MAX(trading_date) FROM sensex_futures_snapshots
+            )
             ORDER BY snapshot_time DESC
             LIMIT %s
             """,
