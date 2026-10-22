@@ -2,7 +2,7 @@
 
 Required environment variables:
   FYERS_APP_ID, FYERS_ACCESS_TOKEN, SUPABASE_DB_URL
-The FYERS access token is short-lived and must be refreshed according to FYERS auth rules.
+The FYERS access token is short-lived; FYERS refresh-token API may be disabled, so update the GitHub secret after fresh authorization.
 """
 import os
 import sys
@@ -52,6 +52,21 @@ def number(value, default=None):
         return default
 
 
+def reported_net_oich(chain_entries):
+    """Return FYERS-reported net OI change: aggregate PE oich minus CE oich."""
+    ce_change = sum(
+        number(row.get("oich"), 0) or 0
+        for row in (chain_entries or [])
+        if isinstance(row, dict) and row.get("option_type") == "CE"
+    )
+    pe_change = sum(
+        number(row.get("oich"), 0) or 0
+        for row in (chain_entries or [])
+        if isinstance(row, dict) and row.get("option_type") == "PE"
+    )
+    return float(pe_change - ce_change)
+
+
 def fetch_optionchain(api):
     response = api.optionchain(data={
         "symbol": UNDERLYING,
@@ -86,7 +101,7 @@ def fetch_optionchain(api):
         "spot": spot,
         "ce_oi": float(ce_oi),
         "pe_oi": float(pe_oi),
-        "oi_increment": float(pe_change - ce_change),
+        "reported_net_oich": float(pe_change - ce_change),
         "expiry_date": expiry,
         "chain_data": entries,
     }
@@ -135,15 +150,41 @@ def fetch_front_future(api):
 
 
 def save_option_snapshot(record, now):
+    """Save snapshot and derive 5-minute COI from consecutive FYERS oich readings.
+
+    FYERS oich is retained in chain_data. The interval movement is calculated as
+    current reported net oich minus the previous snapshot's reported net oich,
+    preventing a daily/cumulative oich value from being added repeatedly.
+    The first snapshot of each trading day is a baseline (cumulative COI = 0).
+    """
     with connect_db() as con, con.cursor() as cur:
         cur.execute("""
-            SELECT cumulative_coi FROM sensex_option_snapshots
+            SELECT cumulative_coi, chain_data
+            FROM sensex_option_snapshots
             WHERE trading_date=%s AND snapshot_time < %s
             ORDER BY snapshot_time DESC LIMIT 1
         """, (now.date(), now))
         previous = cur.fetchone()
-        cumulative = float(previous[0] or 0) if previous else 0.0
-        cumulative += record["oi_increment"]
+
+        current_reported_net = float(record["reported_net_oich"])
+        if previous:
+            previous_cumulative = float(previous[0] or 0)
+            previous_chain = previous[1] or []
+            # psycopg2 may return JSONB as a Python list or a JSON string.
+            if isinstance(previous_chain, str):
+                import json
+                try:
+                    previous_chain = json.loads(previous_chain)
+                except (TypeError, ValueError):
+                    previous_chain = []
+            previous_reported_net = reported_net_oich(previous_chain)
+            interval_coi = current_reported_net - previous_reported_net
+            cumulative = previous_cumulative + interval_coi
+        else:
+            # Do not treat the first snapshot's since-reference oich as a 5-min move.
+            interval_coi = 0.0
+            cumulative = 0.0
+
         cur.execute("""
             INSERT INTO sensex_option_snapshots
                 (snapshot_time, trading_date, spot, expiry_date, cumulative_coi,
@@ -155,10 +196,16 @@ def save_option_snapshot(record, now):
                 ce_oi=EXCLUDED.ce_oi, pe_oi=EXCLUDED.pe_oi,
                 oi_increment=EXCLUDED.oi_increment, chain_data=EXCLUDED.chain_data
         """, (now, now.date(), record["spot"], record["expiry_date"], cumulative,
-              record["ce_oi"], record["pe_oi"], record["oi_increment"],
+              record["ce_oi"], record["pe_oi"], interval_coi,
               __import__("json").dumps(record["chain_data"])))
         con.commit()
-    print(f"SENSEX option snapshot saved: spot={record['spot']:.2f}, CE OI={record['ce_oi']:.0f}, PE OI={record['pe_oi']:.0f}")
+    print(
+        f"SENSEX option snapshot saved: spot={record['spot']:.2f}, "
+        f"CE OI={record['ce_oi']:.0f}, PE OI={record['pe_oi']:.0f}, "
+        f"FYERS net oich={current_reported_net:.0f}, "
+        f"5-min COI={interval_coi:.0f}, cumulative COI={cumulative:.0f}",
+        flush=True,
+    )
 
 
 def save_futures_snapshot(record, now):
@@ -174,9 +221,15 @@ def save_futures_snapshot(record, now):
         else:
             previous_price, previous_volume, previous_vwap = previous
             previous_volume = int(previous_volume or 0)
-            if volume <= previous_volume:
+            if volume < previous_volume:
+                # Cumulative volume reset/contract changed; start a new volume baseline.
                 vwap = record["price"]
+            elif volume == previous_volume:
+                # No new reported volume: retain the prior VWAP rather than forcing it to price.
+                vwap = float(previous_vwap if previous_vwap is not None else previous_price or record["price"])
             else:
+                # Approximation: latest observed price stands in for the interval's traded VWAP.
+                # True VWAP requires trade-level prices/volumes, which this quote endpoint doesn't provide.
                 interval_volume = volume - previous_volume
                 prior_vwap = float(previous_vwap if previous_vwap is not None else previous_price or record["price"])
                 vwap = (prior_vwap * previous_volume + record["price"] * interval_volume) / volume
