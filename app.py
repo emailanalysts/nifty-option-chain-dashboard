@@ -4,6 +4,8 @@ import plotly.graph_objects as go
 from datetime import datetime, time as dt_time
 from zoneinfo import ZoneInfo
 
+from mcx_dashboard import render_mcx_commodity
+
 from calculations import (
     prepare_chain,
     atm_strike,
@@ -186,7 +188,7 @@ def render_dashboard_title(now, nifty_date, bank_date):
 # MAIN DASHBOARD
 # ============================================================
 
-def render_dashboard():
+def render_index_dashboard():
 
     now = ist_now()
 
@@ -954,6 +956,25 @@ def render_dashboard():
                 use_container_width=True,
                 key=chart_key
             )
+
+# ============================================================
+# COMMODITY DASHBOARD TABS
+# ============================================================
+
+def render_dashboard():
+    tab_index, tab_gold, tab_silver, tab_crude, tab_gas = st.tabs([
+        "1. Index Market", "2. Gold", "3. Silver", "4. Crude Oil", "5. Natural Gas"
+    ])
+    with tab_index:
+        render_index_dashboard()
+    with tab_gold:
+        render_mcx_commodity("GOLD", "Gold")
+    with tab_silver:
+        render_mcx_commodity("SILVER", "Silver")
+    with tab_crude:
+        render_mcx_commodity("CRUDEOIL", "Crude Oil")
+    with tab_gas:
+        render_mcx_commodity("NATURALGAS", "Natural Gas")
 
 # ============================================================
 # AUTO REFRESH
