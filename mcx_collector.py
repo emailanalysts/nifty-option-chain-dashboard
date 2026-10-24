@@ -145,29 +145,70 @@ def main():
     if not db_url:
         raise RuntimeError("Missing SUPABASE_DB_URL GitHub secret")
     now = datetime.now(IST)
-    if now.weekday() >= 5 or not (now.time().replace(tzinfo=None) >= datetime.strptime('09:00','%H:%M').time() and now.time().replace(tzinfo=None) <= datetime.strptime('23:59','%H:%M').time()):
+    # Manual diagnostics can be run outside market hours without inserting
+    # stale/off-session data into the production snapshot table.
+    test_only = os.environ.get("MCX_TEST_ONLY", "").strip().lower() in ("1", "true", "yes", "on")
+    force_run = os.environ.get("MCX_FORCE_RUN", "").strip().lower() in ("1", "true", "yes", "on")
+    in_session = (
+        now.weekday() < 5
+        and datetime.strptime("09:00", "%H:%M").time()
+        <= now.time().replace(tzinfo=None)
+        <= datetime.strptime("23:59", "%H:%M").time()
+    )
+    if not in_session and not (test_only or force_run):
         print(f"Outside configured weekday session: {now.isoformat()}; skipping.", flush=True)
         return
+    if test_only:
+        print(
+            f"MCX TEST-ONLY mode enabled at {now.isoformat()}: "
+            "fetch/validate responses, but do NOT save snapshots.",
+            flush=True,
+        )
+    elif force_run and not in_session:
+        print(
+            f"WARNING: MCX_FORCE_RUN enabled outside session at {now.isoformat()}; "
+            "snapshots will be written to the production table.",
+            flush=True,
+        )
     conn = psycopg2.connect(db_url, connect_timeout=15)
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             context = browser.new_context()
             page = context.new_page()
+            test_successes = 0
             try:
                 for symbol in COMMODITIES:
                     captured = datetime.now(IST)
                     try:
                         payload, rows, url = fetch_chain(page, symbol)
-                        save_snapshot(conn, symbol, payload, rows, url, captured)
+                        if test_only:
+                            test_successes += 1
+                            summary = payload.get("Summary") or payload.get("summary") or {}
+                            print(
+                                f"TEST OK {symbol}: rows={len(rows)}, "
+                                f"summary_keys={list(summary)[:10]}, url={url}",
+                                flush=True,
+                            )
+                        else:
+                            save_snapshot(conn, symbol, payload, rows, url, captured)
                     except Exception as exc:
                         print(f"FAILED {symbol}: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
-                # Raise failure only if the entire collector failed to save any data.
-                with conn.cursor() as cur:
-                    cur.execute("SELECT COUNT(*) FROM mcx_option_chain_snapshots WHERE snapshot_time >= %s", (now.replace(second=0,microsecond=0),))
-                    saved = cur.fetchone()[0]
-                if not saved:
-                    raise RuntimeError("No commodity snapshots were saved in this run.")
+                if test_only:
+                    # In diagnostic mode, success means at least one commodity
+                    # returned valid JSON with a non-empty Data list.
+                    # Track successful fetches from the per-symbol log below.
+                    # A counter is maintained via the test_successes variable.
+                    if test_successes == 0:
+                        raise RuntimeError("MCX test-only run fetched no valid commodity chains.")
+                    print(f"MCX test-only run completed: {test_successes}/{len(COMMODITIES)} commodity chains validated; no database rows inserted.", flush=True)
+                else:
+                    # Raise failure only if the entire collector failed to save any data.
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT COUNT(*) FROM mcx_option_chain_snapshots WHERE snapshot_time >= %s", (now.replace(second=0,microsecond=0),))
+                        saved = cur.fetchone()[0]
+                    if not saved:
+                        raise RuntimeError("No commodity snapshots were saved in this run.")
             finally:
                 browser.close()
     finally:
