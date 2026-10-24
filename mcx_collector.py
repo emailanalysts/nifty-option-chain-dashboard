@@ -1,394 +1,173 @@
+"""Collect MCX commodity option-chain snapshots into PostgreSQL/Supabase.
+
+Required environment variable: SUPABASE_DB_URL
+Expected table: mcx_option_chain_snapshots (see README.txt).
 """
-MCX Commodity Collector — Browser Diagnostic Version
-
-Purpose:
-1. Open the official MCX option-chain page using Playwright.
-2. Inspect the page controls and available commodity/expiry options.
-3. Save a screenshot and HTML snapshot for debugging.
-4. Make no database changes.
-
-Run:
-    python mcx_collector.py
-
-Requirements:
-    pip install playwright
-    python -m playwright install chromium
-"""
-
-import asyncio
 import json
-from pathlib import Path
-from datetime import datetime
+import os
+import sys
+from datetime import datetime, time as dt_time
 from zoneinfo import ZoneInfo
 
-from playwright.async_api import async_playwright
-
+import psycopg2
+from playwright.sync_api import sync_playwright
 
 IST = ZoneInfo("Asia/Kolkata")
-
-MCX_URL = (
-    "https://www.mcxindia.com/market-data/option-chain"
-)
-
-OUTPUT_DIR = Path("mcx_diagnostics")
-
-COMMODITIES = [
-    "GOLD",
-    "SILVER",
-    "CRUDEOIL",
-    "NATURALGAS",
-]
+BASE = "https://www.mcxindia.com"
+LANDING = f"{BASE}/market-data/option-chain"
+COMMODITIES = ("GOLD", "SILVER", "CRUDEOIL", "NATURALGAS")
+SESSION_START = dt_time(9, 0)
+SESSION_END = dt_time(23, 59)
+MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
 
 
-async def inspect_page(page):
-    """Inspect the rendered page and return diagnostic details."""
-
-    result = await page.evaluate(
-        """() => {
-            const visible = (el) => {
-                const s = window.getComputedStyle(el);
-                const r = el.getBoundingClientRect();
-
-                return (
-                    s.display !== 'none' &&
-                    s.visibility !== 'hidden' &&
-                    r.width > 0 &&
-                    r.height > 0
-                );
-            };
-
-            const describe = (el) => ({
-                tag: el.tagName,
-                text: (el.innerText || el.textContent || '')
-                    .trim()
-                    .slice(0, 250),
-                value: el.value || null,
-                id: el.id || null,
-                name: el.getAttribute('name'),
-                role: el.getAttribute('role'),
-                ariaLabel: el.getAttribute('aria-label'),
-                ariaHaspopup: el.getAttribute('aria-haspopup'),
-                className:
-                    typeof el.className === 'string'
-                        ? el.className.slice(0, 250)
-                        : null
-            });
-
-            return {
-                url: location.href,
-                title: document.title,
-                readyState: document.readyState,
-
-                selectCount:
-                    document.querySelectorAll('select').length,
-
-                selects: Array.from(
-                    document.querySelectorAll('select')
-                ).map(el => ({
-                    ...describe(el),
-                    options: Array.from(el.options).map(o => ({
-                        text: o.textContent.trim(),
-                        value: o.value
-                    }))
-                })),
-
-                visibleInputs: Array.from(
-                    document.querySelectorAll('input')
-                ).filter(visible).map(describe),
-
-                visibleButtons: Array.from(
-                    document.querySelectorAll('button')
-                ).filter(visible).map(describe),
-
-                visibleComboboxes: Array.from(
-                    document.querySelectorAll(
-                        '[role="combobox"]'
-                    )
-                ).filter(visible).map(describe),
-
-                visibleListboxes: Array.from(
-                    document.querySelectorAll(
-                        '[role="listbox"]'
-                    )
-                ).filter(visible).map(describe),
-
-                visibleOptionElements: Array.from(
-                    document.querySelectorAll(
-                        '[role="option"]'
-                    )
-                ).filter(visible).map(describe),
-
-                visibleDropdownLikeElements: Array.from(
-                    document.querySelectorAll(
-                        '[aria-haspopup], .dropdown, ' +
-                        '[class*="select"], [class*="dropdown"]'
-                    )
-                ).filter(visible).slice(0, 100).map(describe),
-
-                bodyText:
-                    document.body.innerText.slice(0, 12000)
-            };
-        }"""
-    )
-
-    return result
+def in_session(now):
+    return now.weekday() < 5 and SESSION_START <= now.timetz().replace(tzinfo=None) <= SESSION_END
 
 
-async def main():
-    OUTPUT_DIR.mkdir(
-        parents=True,
-        exist_ok=True
-    )
+def select_commodity(page, symbol):
+    selects = page.locator("select")
+    for i in range(selects.count()):
+        select = selects.nth(i)
+        options = select.locator("option")
+        for j in range(options.count()):
+            opt = options.nth(j)
+            value = (opt.get_attribute("value") or "").strip()
+            label = (opt.inner_text() or "").strip()
+            if value.upper() == symbol or label.upper() == symbol:
+                select.select_option(value=value)
+                return select
+    raise RuntimeError(f"Could not find {symbol} in MCX commodity dropdowns ({selects.count()} select elements found). MCX may have changed or blocked the page.")
 
-    timestamp = datetime.now(IST).strftime(
-        "%Y%m%d_%H%M%S"
-    )
 
-    print("=" * 70)
-    print("MCX OPTION-CHAIN PAGE DIAGNOSTIC")
-    print("=" * 70)
-    print("Time IST:", datetime.now(IST).isoformat())
-    print("Page:", MCX_URL)
-    print("Database writes: DISABLED")
-    print()
+def select_expiry(page):
+    selects = page.locator("select")
+    for i in range(selects.count()):
+        select = selects.nth(i)
+        options = select.locator("option")
+        # Do not treat the commodity selector as the expiry selector.
+        option_texts = []
+        for j in range(options.count()):
+            opt = options.nth(j)
+            value = (opt.get_attribute("value") or "").strip()
+            label = (opt.inner_text() or "").strip()
+            option_texts.append((value, label))
+        if any(v.upper() in COMMODITIES or l.upper() in COMMODITIES for v, l in option_texts):
+            continue
+        candidates = [v for v, l in option_texts
+                      if v and v.lower() not in ("0", "-1", "select", "none")
+                      and any(m in (v + " " + l).lower() for m in MONTHS)]
+        if candidates:
+            select.select_option(value=candidates[0])
+            return candidates[0]
+    raise RuntimeError("Could not identify an expiry dropdown with date/month options.")
 
-    async with async_playwright() as p:
 
-        browser = await p.chromium.launch(
-            headless=True
-        )
+def fetch_chain(page, symbol):
+    page.goto(LANDING, wait_until="domcontentloaded", timeout=60000)
+    page.wait_for_timeout(1800)
+    title = (page.title() or "").lower()
+    body = (page.locator("body").inner_text(timeout=10000) or "")[:1500].lower()
+    if "access denied" in title or "access denied" in body:
+        raise RuntimeError("MCX returned an Access Denied page in this browser session.")
 
-        context = await browser.new_context(
-            viewport={
-                "width": 1440,
-                "height": 1000
-            },
-            locale="en-IN",
-            timezone_id="Asia/Kolkata"
-        )
+    select_commodity(page, symbol)
+    page.wait_for_timeout(900)
+    expiry = select_expiry(page)
+    show = page.get_by_role("button", name="Show")
+    if show.count():
+        show.first.click(timeout=10000)
+        page.wait_for_timeout(900)
 
-        page = await context.new_page()
+    endpoint = f"{BASE}/GetOptionChain?InstrumentType=optfut&Symbol={symbol}&Expiry={expiry}"
+    result = page.evaluate("""async (url) => {
+      const r = await fetch(url, {method:'GET', credentials:'include', headers:{
+        'X-Requested-With':'XMLHttpRequest',
+        'Accept':'application/json, text/javascript, */*; q=0.01'
+      }});
+      return {status:r.status, url:r.url, text:await r.text()};
+    }""", endpoint)
+    if result["status"] != 200:
+        raise RuntimeError(f"MCX {symbol} expiry={expiry}: HTTP {result['status']}; response={result['text'][:250]!r}")
+    try:
+        payload = json.loads(result["text"])
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"MCX {symbol} response was not JSON: {result['text'][:250]!r}") from exc
+    rows = payload.get("Data") or payload.get("data") or []
+    if not isinstance(rows, list) or not rows:
+        raise RuntimeError(f"No option-chain rows for {symbol}/{expiry}; keys={list(payload)[:20]}")
+    return payload, rows, result["url"], expiry
 
-        # Record the option-chain API requests initiated by the site.
-        api_responses = []
 
-        async def response_handler(response):
-            if "GetOptionChain" in response.url:
-                item = {
-                    "url": response.url,
-                    "status": response.status,
-                    "content_type": response.headers.get(
-                        "content-type"
-                    )
-                }
+def save_snapshot(conn, symbol, payload, rows, url, expiry, captured):
+    summary = payload.get("Summary") or payload.get("summary") or {}
+    underlying = None
+    underlying_keys = ("UnderlyingValue", "Underlying", "UnderlyingPrice", "SpotPrice", "underlyingValue")
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for key in underlying_keys:
+            value = row.get(key)
+            if value not in (None, ""):
+                try:
+                    underlying = float(value)
+                    break
+                except (TypeError, ValueError):
+                    pass
+        if underlying is not None:
+            break
 
-                api_responses.append(item)
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO mcx_option_chain_snapshots
+              (snapshot_time, trading_date, symbol, expiry_date, underlying_value,
+               row_count, source_url, summary_data, chain_data)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb)
+        """, (captured, captured.date(), symbol, str(expiry) if expiry else None,
+              underlying, len(rows), url, json.dumps(summary), json.dumps(rows)))
+    conn.commit()
+    print(f"SAVED {symbol}: rows={len(rows)}, expiry={expiry}, underlying={underlying}, time={captured.isoformat()}", flush=True)
 
-                print("\nOPTION-CHAIN RESPONSE DETECTED")
-                print(json.dumps(item, indent=2))
 
-        page.on("response", response_handler)
+def main():
+    db_url = os.environ.get("SUPABASE_DB_URL")
+    if not db_url:
+        raise RuntimeError("Missing SUPABASE_DB_URL GitHub Actions secret.")
+    now = datetime.now(IST)
+    if not in_session(now):
+        print(f"Outside weekday session 09:00-23:59 IST: {now.isoformat()}; skipping.", flush=True)
+        return
 
-        try:
-            response = await page.goto(
-                MCX_URL,
-                wait_until="domcontentloaded",
-                timeout=60000
+    conn = psycopg2.connect(db_url, connect_timeout=20)
+    saved, failed = 0, []
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                viewport={"width": 1440, "height": 1000},
+                locale="en-IN", timezone_id="Asia/Kolkata"
             )
-
-            print(
-                "Initial HTTP status:",
-                response.status if response else "Unavailable"
-            )
-
-            # Allow the site's JavaScript to initialize.
-            await page.wait_for_timeout(7000)
-
-            # Capture the page after JavaScript initialization.
-            screenshot_path = (
-                OUTPUT_DIR /
-                f"mcx_page_{timestamp}.png"
-            )
-
-            html_path = (
-                OUTPUT_DIR /
-                f"mcx_page_{timestamp}.html"
-            )
-
-            json_path = (
-                OUTPUT_DIR /
-                f"mcx_diagnostic_{timestamp}.json"
-            )
-
-            await page.screenshot(
-                path=str(screenshot_path),
-                full_page=True
-            )
-
-            html = await page.content()
-
-            html_path.write_text(
-                html,
-                encoding="utf-8"
-            )
-
-            details = await inspect_page(page)
-
-            details["initial_http_status"] = (
-                response.status if response else None
-            )
-
-            details["captured_api_responses"] = api_responses
-
-            json_path.write_text(
-                json.dumps(
-                    details,
-                    indent=2,
-                    ensure_ascii=False
-                ),
-                encoding="utf-8"
-            )
-
-            print("\nPAGE DIAGNOSTICS")
-            print("-" * 70)
-
-            print(
-                "Final URL:",
-                details["url"]
-            )
-
-            print(
-                "Page title:",
-                details["title"]
-            )
-
-            print(
-                "Document ready state:",
-                details["readyState"]
-            )
-
-            print(
-                "HTML select elements:",
-                details["selectCount"]
-            )
-
-            print(
-                "Visible inputs:",
-                len(details["visibleInputs"])
-            )
-
-            print(
-                "Visible buttons:",
-                len(details["visibleButtons"])
-            )
-
-            print(
-                "Visible comboboxes:",
-                len(details["visibleComboboxes"])
-            )
-
-            print(
-                "Visible listboxes:",
-                len(details["visibleListboxes"])
-            )
-
-            print("\nVISIBLE BUTTONS")
-            print(
-                json.dumps(
-                    details["visibleButtons"],
-                    indent=2,
-                    ensure_ascii=False
-                )
-            )
-
-            print("\nVISIBLE COMBOBOXES")
-            print(
-                json.dumps(
-                    details["visibleComboboxes"],
-                    indent=2,
-                    ensure_ascii=False
-                )
-            )
-
-            print("\nVISIBLE INPUTS")
-            print(
-                json.dumps(
-                    details["visibleInputs"],
-                    indent=2,
-                    ensure_ascii=False
-                )
-            )
-
-            print("\nDROPDOWN-LIKE ELEMENTS")
-            print(
-                json.dumps(
-                    details["visibleDropdownLikeElements"],
-                    indent=2,
-                    ensure_ascii=False
-                )
-            )
-
-            print("\nPAGE TEXT PREVIEW")
-            print(details["bodyText"][:6000])
-
-            print("\nCOMMODITY LABELS FOUND IN PAGE TEXT")
-
-            body_upper = details["bodyText"].upper()
-
-            for commodity in COMMODITIES:
-                print(
-                    f"{commodity}: "
-                    f"{commodity in body_upper}"
-                )
-
-            print("\nCAPTURED OPTION-CHAIN REQUESTS")
-            print(
-                json.dumps(
-                    api_responses,
-                    indent=2
-                )
-            )
-
-            print("\nFILES CREATED")
-            print("Screenshot:", screenshot_path)
-            print("HTML:", html_path)
-            print("Diagnostic JSON:", json_path)
-
-            print(
-                "\nNo database writes were performed."
-            )
-
-        except Exception as exc:
-            print(
-                "\nDIAGNOSTIC FAILED:",
-                type(exc).__name__,
-                str(exc)
-            )
-
+            page = context.new_page()
+            page.set_default_timeout(15000)
             try:
-                error_path = (
-                    OUTPUT_DIR /
-                    f"mcx_error_{timestamp}.png"
-                )
+                for symbol in COMMODITIES:
+                    try:
+                        payload, rows, url, expiry = fetch_chain(page, symbol)
+                        save_snapshot(conn, symbol, payload, rows, url, expiry, datetime.now(IST))
+                        saved += 1
+                    except Exception as exc:
+                        failed.append(symbol)
+                        print(f"FAILED {symbol}: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+            finally:
+                context.close()
+                browser.close()
+    finally:
+        conn.close()
 
-                await page.screenshot(
-                    path=str(error_path),
-                    full_page=True
-                )
-
-                print(
-                    "Error screenshot:",
-                    error_path
-                )
-
-            except Exception:
-                pass
-
-            raise
-
-        finally:
-            await browser.close()
+    print(f"Collection complete: saved={saved}/4; failed={','.join(failed) if failed else 'none'}", flush=True)
+    if saved == 0:
+        raise RuntimeError("No MCX snapshots were saved. Check MCX access and database logs.")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
