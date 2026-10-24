@@ -1,10 +1,17 @@
 name: MCX Commodity Collector
+
 on:
   workflow_dispatch:
+    inputs:
+      test_only:
+        description: "Test MCX endpoint without inserting rows into Supabase"
+        required: true
+        type: boolean
+        default: true
   schedule:
-    # UTC schedule, every 10 minutes during weekday commodity-session window.
-    # 03:30 UTC = 09:00 IST; last run 18:20 UTC = 23:50 IST.
+    # Every 10 minutes; collector itself enforces 09:00-23:59 IST, weekdays.
     - cron: "*/10 3-18 * * 1-5"
+
 jobs:
   collect:
     runs-on: ubuntu-latest
@@ -15,7 +22,8 @@ jobs:
           python-version: "3.12"
       - run: pip install playwright psycopg2-binary
       - run: python -m playwright install --with-deps chromium
-      - name: Collect MCX commodity snapshots
+      - name: Collect or test MCX commodity snapshots
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          MCX_TEST_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.test_only && '1' || '0' }}
         run: python mcx_collector.py
