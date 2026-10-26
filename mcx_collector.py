@@ -65,12 +65,18 @@ def select_expiry(page):
 
 def fetch_chain(page, symbol):
     page.goto(LANDING, wait_until="domcontentloaded", timeout=60000)
-    page.wait_for_timeout(1800)
-    title = (page.title() or "").lower()
-    body = (page.locator("body").inner_text(timeout=10000) or "")[:1500].lower()
-    if "access denied" in title or "access denied" in body:
+    page.wait_for_timeout(3000)
+    
+    title = page.title() or ""
+    body_text = page.locator("body").inner_text(timeout=10000) or ""
+    
+    print(f"MCX page title: {title}", flush=True)
+    print(f"MCX page URL: {page.url}", flush=True)
+    print(f"MCX page text (first 1000 chars): {body_text[:1000]!r}", flush=True)
+    
+    if "access denied" in title.lower() or "access denied" in body_text.lower():
         raise RuntimeError("MCX returned an Access Denied page in this browser session.")
-
+        
     select_commodity(page, symbol)
     page.wait_for_timeout(900)
     expiry = select_expiry(page)
