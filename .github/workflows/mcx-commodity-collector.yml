@@ -3,10 +3,11 @@ name: MCX Commodity Collector
 on:
   workflow_dispatch:
   schedule:
-    # UTC schedule: every 10 minutes, 09:00-23:50 IST, Monday-Friday.
+    # 09:00–09:50 IST
     - cron: "30,40,50 3 * * 1-5"
+    # 10:00 IST–23:50 IST
     - cron: "*/10 4-17 * * 1-5"
-    - cron: "0,10,20 18 * * 1-5"
+    - cron: "0,10,20,30,40,50 18 * * 1-5"
 
 jobs:
   collect:
