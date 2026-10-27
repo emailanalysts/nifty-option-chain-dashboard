@@ -1,6 +1,6 @@
 name: MCX Commodity Collector
 
-on:
+"on":
 workflow_dispatch:
 schedule:
 - cron: "30,40,50 3 * * 1-5"
