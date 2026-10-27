@@ -11,9 +11,10 @@ jobs:
 collect:
 runs-on: ubuntu-latest
 timeout-minutes: 10
+
 steps:
-- name: Checkout repository
-uses: actions/checkout@v4
+  - name: Checkout repository
+    uses: actions/checkout@v4
 
   - name: Set up Python
     uses: actions/setup-python@v5
@@ -40,4 +41,3 @@ uses: actions/checkout@v4
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       PYTHONUNBUFFERED: "1"
     run: python -u mcx_collector.py
-```
