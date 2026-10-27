@@ -170,10 +170,17 @@ def main():
     finally:
         conn.close()
 
-    print(f"Collection complete: saved={saved}/4; failed={','.join(failed) if failed else 'none'}", flush=True)
-    if saved == 0:
-        raise RuntimeError("No MCX snapshots were saved. Check MCX access and database logs.")
-
+    print(
+        f"Collection complete: saved={saved}/4; "
+        f"failed={','.join(failed) if failed else 'none'}",
+        flush=True
+    )
+    
+    if failed:
+        raise RuntimeError(
+            f"MCX collection incomplete: saved={saved}/4; "
+            f"failed={','.join(failed)}"
+        )
 
 if __name__ == "__main__":
     main()
