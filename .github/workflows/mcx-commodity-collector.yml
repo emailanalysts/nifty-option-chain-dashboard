@@ -54,4 +54,3 @@ steps:
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       PYTHONUNBUFFERED: "1"
     run: python -u mcx_collector.py
-```
