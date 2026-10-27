@@ -3,36 +3,22 @@ name: MCX Commodity Collector
 on:
 workflow_dispatch:
 schedule:
-# 09:00–09:50 IST, Monday–Friday
 - cron: "30,40,50 3 * * 1-5"
-
-# 10:00–22:50 IST, Monday–Friday
 - cron: "*/10 4-17 * * 1-5"
-
-# 23:00–23:50 IST, Monday–Friday
 - cron: "0,10,20,30,40,50 18 * * 1-5"
-
-permissions:
-contents: read
-
-concurrency:
-group: mcx-commodity-collector
-cancel-in-progress: false
 
 jobs:
 collect:
 runs-on: ubuntu-latest
 timeout-minutes: 10
-
 steps:
-  - name: Check out repository
-    uses: actions/checkout@v4
+- name: Checkout repository
+uses: actions/checkout@v4
 
   - name: Set up Python
     uses: actions/setup-python@v5
     with:
       python-version: "3.12"
-      cache: pip
 
   - name: Install dependencies
     run: |
@@ -42,16 +28,16 @@ steps:
   - name: Install Chromium
     run: python -m playwright install --with-deps chromium
 
-  - name: Verify collector configuration
+  - name: Check configuration
     env:
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
     run: |
-      python -c "import os; print('SUPABASE_DB_URL configured:', bool(os.environ.get('SUPABASE_DB_URL')))"
+      python -c "import os; print('Database secret configured:', bool(os.environ.get('SUPABASE_DB_URL')))"
       python -c "import os; print('Collector exists:', os.path.isfile('mcx_collector.py'))"
 
-  - name: Collect MCX commodity snapshots
+  - name: Run MCX collector
     env:
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       PYTHONUNBUFFERED: "1"
     run: python -u mcx_collector.py
-
+```
