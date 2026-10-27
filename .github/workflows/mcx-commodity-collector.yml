@@ -12,32 +12,32 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
-  steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-  
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.12"
-  
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install playwright psycopg2-binary
-  
-    - name: Install Chromium
-      run: python -m playwright install --with-deps chromium
-  
-    - name: Check configuration
-      env:
-        SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-      run: |
-        python -c "import os; print('Database secret configured:', bool(os.environ.get('SUPABASE_DB_URL')))"
-        python -c "import os; print('Collector exists:', os.path.isfile('mcx_collector.py'))"
-  
-    - name: Run MCX collector
-      env:
-        SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        PYTHONUNBUFFERED: "1"
-      run: python -u mcx_collector.py
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+    
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+    
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright psycopg2-binary
+    
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+    
+      - name: Check configuration
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          python -c "import os; print('Database secret configured:', bool(os.environ.get('SUPABASE_DB_URL')))"
+          python -c "import os; print('Collector exists:', os.path.isfile('mcx_collector.py'))"
+    
+      - name: Run MCX collector
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PYTHONUNBUFFERED: "1"
+        run: python -u mcx_collector.py
